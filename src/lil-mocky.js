@@ -197,7 +197,7 @@ function createClass(state, options) {
 		Object.defineProperties(this, Object.getOwnPropertyDescriptors(state.descriptions[index]));
 
 		if (typeof state.descriptions[index].constructor == 'function')
-			state.descriptions[index].constructor(...arguments);
+			state.descriptions[index].constructor.call(this, ...arguments);
 
 		state.numInstances++;
 	};
