@@ -395,4 +395,167 @@ describe('lil-mocky', () => {
 			expect(inst.getValue()).to.equal('default'); // Falls back to call 0
 		});
 	});
+
+	describe('spy', () => {
+		it('will spy on method and call through to original', () => {
+			const obj = {
+				greet: function(name) {
+					return `Hello, ${name}!`;
+				}
+			};
+
+			const spy = mocky.spy(obj, 'greet');
+
+			const result = obj.greet('World');
+
+			expect(result).to.equal('Hello, World!');
+			expect(spy.calls().length).to.equal(1);
+			expect(spy.calls(0)).to.deep.equal(['World']);
+		});
+
+		it('will track multiple calls to spied method', () => {
+			const obj = {
+				add: function(a, b) {
+					return a + b;
+				}
+			};
+
+			const spy = mocky.spy(obj, 'add');
+
+			expect(obj.add(2, 3)).to.equal(5);
+			expect(obj.add(10, 20)).to.equal(30);
+
+			expect(spy.calls().length).to.equal(2);
+			expect(spy.calls(0)).to.deep.equal([2, 3]);
+			expect(spy.calls(1)).to.deep.equal([10, 20]);
+		});
+
+		it('will override return value with ret() while still tracking', () => {
+			const obj = {
+				getValue: function() {
+					return 'original';
+				}
+			};
+
+			const spy = mocky.spy(obj, 'getValue');
+			spy.ret('overridden');
+
+			const result = obj.getValue();
+
+			expect(result).to.equal('overridden');
+			expect(spy.calls().length).to.equal(1);
+		});
+
+		it('will spy with replacement function', () => {
+			const obj = {
+				calculate: function(x, y) {
+					return x * y;
+				}
+			};
+
+			const spy = mocky.spy(obj, 'calculate', mocky.function().args('x', 'y'));
+			spy.ret(100);
+
+			const result = obj.calculate(5, 3);
+
+			expect(result).to.equal(100);
+			expect(spy.calls(0)).to.deep.equal({ x: 5, y: 3 });
+		});
+
+		it('will restore original method', () => {
+			const obj = {
+				doThing: function() {
+					return 'original';
+				}
+			};
+
+			const spy = mocky.spy(obj, 'doThing');
+			spy.ret('spied');
+
+			expect(obj.doThing()).to.equal('spied');
+
+			spy.restore();
+
+			expect(obj.doThing()).to.equal('original');
+		});
+
+		it('will spy on class prototype method', () => {
+			class MyClass {
+				greet(name) {
+					return `Hello, ${name}`;
+				}
+			}
+
+			const spy = mocky.spy(MyClass.prototype, 'greet');
+
+			const instance = new MyClass();
+			const result = instance.greet('Test');
+
+			expect(result).to.equal('Hello, Test');
+			expect(spy.calls().length).to.equal(1);
+			expect(spy.calls(0)).to.deep.equal(['Test']);
+
+			spy.restore();
+		});
+
+		it('will spy with custom replacement body that calls through', () => {
+			const obj = {
+				multiply: function(a, b) {
+					return a * b;
+				}
+			};
+
+			const original = obj.multiply;
+			const spy = mocky.spy(obj, 'multiply', mocky.function((context) => {
+				const result = original.apply(context.self, context.rawArgs);
+				return result * 2; // Double the result
+			}));
+
+			const result = obj.multiply(3, 4);
+
+			expect(result).to.equal(24); // (3 * 4) * 2
+			expect(spy.calls().length).to.equal(1);
+
+			spy.restore();
+		});
+
+		it('will preserve this context when spying', () => {
+			const obj = {
+				value: 42,
+				getValue: function() {
+					return this.value;
+				}
+			};
+
+			const spy = mocky.spy(obj, 'getValue');
+
+			const result = obj.getValue();
+
+			expect(result).to.equal(42);
+			expect(spy.calls().length).to.equal(1);
+
+			spy.restore();
+		});
+
+		it('will provide context.original in replacement builder', () => {
+			const obj = {
+				add: function(a, b) {
+					return a + b;
+				}
+			};
+
+			const spy = mocky.spy(obj, 'add', mocky.function((context) => {
+				// Call original and modify result
+				const originalResult = context.original.apply(context.self, context.rawArgs);
+				return originalResult * 10;
+			}).args('x', 'y'));
+
+			const result = obj.add(3, 4);
+
+			expect(result).to.equal(70); // (3 + 4) * 10
+			expect(spy.calls(0)).to.deep.equal({ x: 3, y: 4 });
+
+			spy.restore();
+		});
+	});
 });

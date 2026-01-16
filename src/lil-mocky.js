@@ -7,7 +7,8 @@ function functionBuilder(body) {
 		async: false,
 		body: body,
 		args: [],
-		select: []
+		select: [],
+		original: undefined
 	};
 
 	return {
@@ -23,13 +24,17 @@ function functionBuilder(body) {
 			options.select = indexes;
 			return this;
 		},
+		original: function(fn) {
+			options.original = fn;
+			return this;
+		},
 		build: function(parent, key) {
 			const state = {};
 			const mock = createFunction(state, options);
 
 			if (parent)
 				Object.defineProperty(parent, key, { value: mock });
-			
+
 			return wireFunction(parent ? parent[key] : mock, state);
 		}
 	};
@@ -68,8 +73,8 @@ function createFunction(state, options) {
 	}
 }
 
-function getFunctionBody(parent, state, options, args) {
-	args = deepClone(getFunctionArgs(args, options));
+function getFunctionBody(parent, state, options, rawArgs) {
+	const args = deepClone(getFunctionArgs(rawArgs, options));
 	state.calls.push(args);
 	const call = state.calls.length;
 
@@ -94,6 +99,8 @@ function getFunctionBody(parent, state, options, args) {
 			state: state,
 			call: call,
 			args: args,
+			rawArgs: rawArgs,
+			original: options.original,
 			ret: ret
 		});
 	} else {
@@ -124,6 +131,9 @@ function getFunctionArgs(callArgs, options) {
 
 			args[argName] = callArgs[i] !== undefined ? callArgs[i] : defaultValue;
 		}
+	} else {
+		// NOTE: Previously returned null. Now returns array (may break backwards compatibility).
+		args = Array.from(callArgs);
 	}
 
 	return args;
@@ -270,10 +280,31 @@ function deepClone(target) {
 	return target;
 }
 
+function createSpy(object, key, replacement) {
+	if (!replacement) {
+		replacement = functionBuilder((ctx) => {
+			if (ctx.ret !== undefined)
+				return ctx.ret;
+
+			return ctx.original.apply(ctx.self, ctx.rawArgs);
+		});
+	}
+
+	const original = object[key];
+	const spyFn = replacement.original(original).build();
+	spyFn.restore = () => {
+		object[key] = original;
+	};
+	object[key] = spyFn;
+
+	return spyFn;
+}
+
 module.exports = {
+	spy: createSpy,
 	create: mockBuilder,
 	function: functionBuilder,
 	object: objectBuilder,
 	class: classBuilder,
-	property: propertyBuilder
+	property: propertyBuilder,
 };
