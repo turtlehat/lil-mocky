@@ -4,6 +4,13 @@ const mocky = require('../src/lil-mocky.js');
 
 describe('lil-mocky', () => {
 	describe('function', () => {
+		it('will build directly without mocky.create', async () => {
+			const mock = mocky.function().args('x', 'y').build();
+			mock.ret('result');
+
+			expect(mock(1, 2)).to.equal('result');
+			expect(mock.calls(0)).to.deep.equal({ x: 1, y: 2 });
+		});
 		it('will be a function with args', async () => {
 			const mock = mocky.create(mocky.function().args('firstArg', { secondArg: 'testDefault' }));
 			mock.ret('testRet');

@@ -206,7 +206,7 @@ function createClass(state, options) {
 
 		Object.defineProperties(this, Object.getOwnPropertyDescriptors(state.descriptions[index]));
 
-		if (typeof state.descriptions[index].constructor == 'function')
+		if (typeof state.descriptions[index].constructor === 'function')
 			state.descriptions[index].constructor.call(this, ...arguments);
 
 		state.numInstances++;
@@ -263,10 +263,10 @@ function wireProperty(mock, state) {
 }
 
 function deepClone(target) {
-	if (typeof target == 'object') {
+	if (typeof target === 'object') {
 		if (Array.isArray(target)) {
 			return target.map(deepClone);
-		} else if (target?.constructor == Object) {
+		} else if (target?.constructor === Object) {
 			const clone = {};
 
 			for (const key in target) {
