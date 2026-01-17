@@ -181,6 +181,56 @@ describe('lil-mocky', () => {
 			// Property value persists after reset (known limitation)
 			expect(mock.accessor).to.equal('testValue');
 		});
+		it('will reset plain properties to initial values', async () => {
+			const mock = mocky.create(mocky.object({
+				counter: 0,
+				name: 'Alice',
+				method: mocky.function()
+			}));
+
+			mock.counter = 100;
+			mock.name = 'Bob';
+			mock.method.ret('test');
+			mock.method();
+
+			mock.reset();
+
+			expect(mock.counter).to.equal(0);
+			expect(mock.name).to.equal('Alice');
+			expect(mock.method.calls().length).to.equal(0);
+		});
+		it('will delete properties added after creation', async () => {
+			const mock = mocky.create(mocky.object({
+				initial: 'value'
+			}));
+
+			mock.added = 'new';
+			expect(mock.added).to.equal('new');
+
+			mock.reset();
+
+			expect(mock.initial).to.equal('value');
+			expect(mock.added).to.equal(undefined);
+			expect('added' in mock).to.equal(false);
+		});
+		it('will reset object with mixed property types', async () => {
+			const mock = mocky.create(mocky.object({
+				counter: 42,
+				method: mocky.function(),
+				accessor: mocky.property()
+			}));
+
+			mock.counter = 100;
+			mock.method.ret('test');
+			mock.method();
+			mock.accessor = 'value';
+
+			mock.reset();
+
+			expect(mock.counter).to.equal(42);
+			expect(mock.method.calls().length).to.equal(0);
+			expect(mock.accessor).to.equal('value');
+		});
 	});
 
 	describe('class', () => {

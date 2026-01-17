@@ -148,17 +148,37 @@ function objectBuilder(props) {
 
 			if (parent)
 				Object.defineProperty(parent, key, { value: mock });
-			
-			return wireObject(parent ? parent[key] : mock);
+
+			return wireObject(parent ? parent[key] : mock, props);
 		}
 	};
 }
 
-function wireObject(mock) {
+function wireObject(mock, initialProps) {
+	const initialMocks = new Set();
+	const initialValues = new Map();
+
+	for (const key in initialProps) {
+		const prop = initialProps[key];
+		if (typeof prop.build === 'function') {
+			initialMocks.add(key);
+		} else {
+			initialValues.set(key, prop);
+		}
+	}
+
 	mock.reset = () => {
 		for (const key of Object.getOwnPropertyNames(mock)) {
-			if (typeof mock[key].reset == 'function')
-				mock[key].reset();
+			if (key === 'reset') continue;
+
+			if (initialMocks.has(key)) {
+				if (typeof mock[key]?.reset === 'function')
+					mock[key].reset();
+			} else if (initialValues.has(key)) {
+				mock[key] = initialValues.get(key);
+			} else {
+				delete mock[key];
+			}
 		}
 	};
 

@@ -80,7 +80,7 @@ await mock(); // Returns a promise
 
 ### 📦 Object Mocks
 
-Create mock objects with nested mocks:
+Create mock objects with nested mocks and plain properties:
 
 ```javascript
 const mock = mocky.object({
@@ -88,15 +88,24 @@ const mock = mocky.object({
   nested: mocky.object({
     deepMethod: mocky.function()
   }),
-  value: 42
+  counter: 0,
+  name: 'Alice'
 }).build();
 
 mock.method.ret('result');
 mock.method('test');
 mock.method.calls(0); // { input: 'test' }
 
-// Reset all nested mocks
+// Modify properties
+mock.counter = 100;
+mock.name = 'Bob';
+mock.addedProp = 'new';
+
+// Reset restores everything
 mock.reset();
+// - Nested mocks cleared (method.calls() = [])
+// - Plain properties restored (counter = 0, name = 'Alice')
+// - Added properties deleted (addedProp removed)
 ```
 
 ### 🏛️ Class Mocks
@@ -122,19 +131,6 @@ instance2.greet('Hi'); // Returns 'Hola!'
 // Access instance mocks after creation
 Mock.inst(0).constructor.calls(0); // { name: 'Alice' }
 Mock.numInsts(); // 2
-```
-
-### 🎯 Property Mocks
-
-Create getter/setter properties:
-
-```javascript
-const mock = mocky.object({
-  value: mocky.property()
-}).build();
-
-mock.value = 42;
-console.log(mock.value); // 42
 ```
 
 ### 🔍 Spy Function
