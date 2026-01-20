@@ -231,6 +231,118 @@ describe('lil-mocky', () => {
 			expect(mock.method.calls().length).to.equal(0);
 			expect(mock.accessor).to.equal('value');
 		});
+		it('will support Symbol properties', async () => {
+			const customSymbol = Symbol('custom');
+
+			const mock = mocky.create(mocky.object({
+				[Symbol.iterator]: mocky.function(),
+				[customSymbol]: 'symbolValue',
+				regularProp: 'regularValue'
+			}));
+
+			// Verify Symbol.iterator exists and is a function
+			expect(typeof mock[Symbol.iterator]).to.equal('function');
+
+			// Verify custom symbol property exists
+			expect(mock[customSymbol]).to.equal('symbolValue');
+
+			// Verify regular property exists
+			expect(mock.regularProp).to.equal('regularValue');
+
+			// Configure and use Symbol.iterator
+			mock[Symbol.iterator].ret('iteratorResult');
+			expect(mock[Symbol.iterator]()).to.equal('iteratorResult');
+			expect(mock[Symbol.iterator].calls().length).to.equal(1);
+		});
+		it('will reset Symbol properties correctly', async () => {
+			const customSymbol = Symbol('custom');
+
+			const mock = mocky.create(mocky.object({
+				[Symbol.iterator]: mocky.function().args('arg'),
+				[customSymbol]: 'initialValue',
+				regularProp: 'initial'
+			}));
+
+			// Modify all properties
+			mock[Symbol.iterator].ret('testRet');
+			mock[Symbol.iterator]('testArg');
+			mock[customSymbol] = 'modifiedValue';
+			mock.regularProp = 'modified';
+
+			// Verify modifications
+			expect(mock[Symbol.iterator]('testArg')).to.equal('testRet');
+			expect(mock[Symbol.iterator].calls().length).to.equal(2);
+			expect(mock[customSymbol]).to.equal('modifiedValue');
+			expect(mock.regularProp).to.equal('modified');
+
+			// Reset
+			mock.reset();
+
+			// Verify Symbol function mock was reset
+			expect(mock[Symbol.iterator].calls().length).to.equal(0);
+			expect(mock[Symbol.iterator]()).to.equal(undefined);
+
+			// Verify Symbol plain property was restored
+			expect(mock[customSymbol]).to.equal('initialValue');
+
+			// Verify regular property was restored
+			expect(mock.regularProp).to.equal('initial');
+		});
+		it('will delete Symbol properties added after creation', async () => {
+			const initialSymbol = Symbol('initial');
+			const addedSymbol = Symbol('added');
+
+			const mock = mocky.create(mocky.object({
+				[initialSymbol]: 'initial'
+			}));
+
+			// Add a Symbol property after creation
+			mock[addedSymbol] = 'added';
+			expect(mock[addedSymbol]).to.equal('added');
+
+			// Reset
+			mock.reset();
+
+			// Initial Symbol property should remain
+			expect(mock[initialSymbol]).to.equal('initial');
+
+			// Added Symbol property should be deleted
+			expect(mock[addedSymbol]).to.equal(undefined);
+			expect(Object.getOwnPropertySymbols(mock).includes(addedSymbol)).to.equal(false);
+		});
+		it('will handle null and undefined property values', async () => {
+			const mock = mocky.create(mocky.object({
+				nullProp: null,
+				undefinedProp: undefined,
+				zeroProp: 0,
+				falseProp: false,
+				emptyStringProp: ''
+			}));
+
+			// Verify initial values
+			expect(mock.nullProp).to.equal(null);
+			expect(mock.undefinedProp).to.equal(undefined);
+			expect(mock.zeroProp).to.equal(0);
+			expect(mock.falseProp).to.equal(false);
+			expect(mock.emptyStringProp).to.equal('');
+
+			// Modify values
+			mock.nullProp = 'changed';
+			mock.undefinedProp = 'changed';
+			mock.zeroProp = 100;
+			mock.falseProp = true;
+			mock.emptyStringProp = 'changed';
+
+			// Reset
+			mock.reset();
+
+			// Verify restored to initial values
+			expect(mock.nullProp).to.equal(null);
+			expect(mock.undefinedProp).to.equal(undefined);
+			expect(mock.zeroProp).to.equal(0);
+			expect(mock.falseProp).to.equal(false);
+			expect(mock.emptyStringProp).to.equal('');
+		});
 	});
 
 	describe('class', () => {

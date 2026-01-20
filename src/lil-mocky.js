@@ -158,9 +158,9 @@ function wireObject(mock, initialProps) {
 	const initialMocks = new Set();
 	const initialValues = new Map();
 
-	for (const key in initialProps) {
+	for (const key of Reflect.ownKeys(initialProps)) {
 		const prop = initialProps[key];
-		if (typeof prop.build === 'function') {
+		if (typeof prop?.build === 'function') {
 			initialMocks.add(key);
 		} else {
 			initialValues.set(key, prop);
@@ -168,7 +168,7 @@ function wireObject(mock, initialProps) {
 	}
 
 	mock.reset = () => {
-		for (const key of Object.getOwnPropertyNames(mock)) {
+		for (const key of Reflect.ownKeys(mock)) {
 			if (key === 'reset') continue;
 
 			if (initialMocks.has(key)) {
@@ -188,10 +188,10 @@ function wireObject(mock, initialProps) {
 function createObjectWithProps(props) {
 	const object = {};
 
-	for (const key in props) {
+	for (const key of Reflect.ownKeys(props)) {
 		const prop = props[key];
 
-		if (typeof prop.build == 'function') {
+		if (typeof prop?.build == 'function') {
 			prop.build(object, key);
 		} else {
 			object[key] = prop;
