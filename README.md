@@ -106,6 +106,15 @@ mock.reset();
 // - Nested mocks cleared (method.calls() = [])
 // - Plain properties restored (counter = 0, name = 'Alice')
 // - Added properties deleted (addedProp removed)
+
+// Symbol properties are fully supported
+const mock = mocky.object({
+  [Symbol.iterator]: mocky.function(),
+  [Symbol.toStringTag]: 'CustomMock'
+}).build();
+
+mock[Symbol.iterator].ret('value');
+mock[Symbol.iterator](); // Returns 'value'
 ```
 
 ### 🏛️ Class Mocks
@@ -176,6 +185,42 @@ spy.restore();
 
 ## 🎨 Advanced Usage
 
+### Understanding .ret() vs Custom Implementations
+
+**Use `.ret()` for static return values:**
+
+```javascript
+const mock = mocky.function().build();
+mock.ret(42); // Returns 42 for all calls
+mock.ret(null, 1); // Returns null for first call only
+mock.ret([1, 2, 3]); // Returns the array
+
+// ❌ WRONG - .ret() stores the value, doesn't call functions
+mock.ret(() => someLogic()); // Returns the function itself!
+```
+
+**Use custom implementations for dynamic logic:**
+
+```javascript
+// ✅ RIGHT - custom implementation for dynamic behavior
+const mock = mocky.function((context) => {
+  // Access context.ret to allow overriding via .ret()
+  if (context.ret !== undefined)
+    return context.ret;
+
+  // Your custom logic
+  return context.args.x * 2;
+}).args('x').build();
+
+mock(5); // Returns 10 (uses custom logic)
+mock.ret(100); // Override for all calls
+mock(5); // Returns 100 (ignores custom logic)
+```
+
+**When to use each:**
+- **`.ret(value)`**: Simple values, different returns per call number, test-time configuration
+- **Custom implementation**: Dynamic computation, access to arguments/context, fallback patterns
+
 ### Return Values Per Call
 
 Configure different return values for each call:
@@ -183,14 +228,16 @@ Configure different return values for each call:
 ```javascript
 const mock = mocky.function().build();
 
-mock.ret('default'); // Call 0 (default for all calls)
-mock.ret('first', 1); // Call 1
-mock.ret('second', 2); // Call 2
+mock.ret('default'); // Call 0 = default for all calls
+mock.ret('first', 1); // Call 1 = first actual call
+mock.ret('second', 2); // Call 2 = second actual call
 
-mock(); // 'first'
-mock(); // 'second'
-mock(); // 'default' (falls back to call 0)
+mock(); // Returns 'first' (call 1)
+mock(); // Returns 'second' (call 2)
+mock(); // Returns 'default' (call 3 falls back to call 0)
 ```
+
+**Important**: Call numbers are **1-indexed** (first call is 1, not 0). Call 0 is the default fallback for all calls.
 
 ### Dynamic Return Values
 
@@ -249,6 +296,162 @@ mock.reset();
 
 mock.calls().length; // 0
 mock(); // Returns undefined (ret cleared)
+```
+
+### Working with Null and Undefined
+
+Both `null` and `undefined` are valid property values:
+
+```javascript
+const mock = mocky.object({
+  nullValue: null,        // Explicitly null
+  undefinedValue: undefined, // Explicitly undefined (or just omit)
+  zeroValue: 0,          // Falsy but valid
+  emptyString: '',       // Falsy but valid
+  method: mocky.function()
+}).build();
+
+// All properties are accessible
+mock.nullValue;        // null
+mock.undefinedValue;   // undefined
+
+// Reset restores all initial values including null/undefined
+mock.nullValue = 'changed';
+mock.reset();
+mock.nullValue;        // null (restored)
+```
+
+## 💡 Common Patterns
+
+### Fallback Pattern
+
+Combine custom implementation with `.ret()` for flexible mocking:
+
+```javascript
+const mock = mocky.function((context) => {
+  // Allow test to override via .ret()
+  if (context.ret !== undefined)
+    return context.ret;
+
+  // Default behavior
+  return context.args.x * 2;
+}).args('x').build();
+
+// Uses default behavior
+mock(5); // Returns 10
+
+// Override for specific test
+mock.ret(999);
+mock(5); // Returns 999
+```
+
+### Simulating Async Operations
+
+Mock IndexedDB-style async requests:
+
+```javascript
+const openRequest = mocky.function((context) => {
+  const request = {
+    result: null,
+    onsuccess: null,
+    onerror: null
+  };
+
+  setTimeout(() => {
+    if (context.ret !== undefined)
+      request.result = context.ret;
+    request.onsuccess?.();
+  }, 0);
+
+  return request;
+}).build();
+
+// In test
+openRequest.ret({ objectStoreNames: ['store1', 'store2'] });
+const req = openRequest();
+req.onsuccess = () => {
+  console.log(req.result); // { objectStoreNames: [...] }
+};
+```
+
+### Conditional Behavior
+
+Throw errors or return values based on arguments:
+
+```javascript
+const mock = mocky.function((context) => {
+  if (context.args.shouldFail)
+    throw new Error('Simulated failure');
+
+  return context.ret || 'default success';
+}).args('shouldFail').build();
+
+// Normal operation
+mock(false); // Returns 'default success'
+
+// Simulate failure
+try {
+  mock(true); // Throws error
+} catch (e) {
+  console.log('Caught:', e.message);
+}
+
+// Override return value
+mock.ret('custom');
+mock(false); // Returns 'custom'
+```
+
+### Progressive Call Responses
+
+Simulate different responses for sequential calls:
+
+```javascript
+const fetch = mocky.function().args('url').build();
+
+// First call: loading
+fetch.ret({ status: 'loading' }, 1);
+// Second call: success
+fetch.ret({ status: 'success', data: [1, 2, 3] }, 2);
+// Third call: cached
+fetch.ret({ status: 'cached', data: [1, 2, 3] }, 3);
+
+fetch('/api'); // { status: 'loading' }
+fetch('/api'); // { status: 'success', data: [...] }
+fetch('/api'); // { status: 'cached', data: [...] }
+```
+
+### Complex Object with Multiple Mock Types
+
+```javascript
+const mockDB = mocky.object({
+  // Simple mock - configure with .ret() in tests
+  get: mocky.function().args('key'),
+
+  // Mock with custom logic and fallback
+  getOrDefault: mocky.function((context) => {
+    return context.ret || context.args.defaultValue;
+  }).args('key', 'defaultValue'),
+
+  // Async mock
+  fetch: mocky.function((context) => {
+    return Promise.resolve(context.ret || null);
+  }).args('url'),
+
+  // Plain properties
+  connected: true,
+  retryCount: 0
+}).build();
+
+// In tests
+mockDB.get.ret('cached-value');
+mockDB.fetch.ret({ data: [1, 2, 3] });
+
+mockDB.get('key'); // 'cached-value'
+mockDB.getOrDefault('missing', 'fallback'); // 'fallback'
+await mockDB.fetch('/api'); // { data: [1, 2, 3] }
+
+// Reset everything for next test
+mockDB.reset();
 ```
 
 ## 🧪 Testing with Mocha/Chai
@@ -319,6 +522,35 @@ mock.ret('value');
 ```
 
 **Note**: `mocky.create(builder)` also exists for backwards compatibility - it's just a wrapper that calls `.build()`.
+
+### Built Mocks Are Immutable
+
+Once a mock is built, its properties are read-only and cannot be reassigned:
+
+```javascript
+const mock = mocky.object({
+  method: mocky.function()
+}).build();
+
+// ❌ WRONG - will throw an error
+mock.method = () => 'new implementation'; // TypeError!
+
+// ✅ RIGHT - define everything during building
+const mock = mocky.object({
+  method: mocky.function((context) => 'implementation')
+}).build();
+
+// You CAN modify plain property values
+const mock = mocky.object({
+  counter: 0,
+  method: mocky.function()
+}).build();
+
+mock.counter = 10; // ✅ OK - plain properties are mutable
+mock.method = null; // ❌ ERROR - mock functions are read-only
+```
+
+**Why?** This prevents accidental bugs and ensures `.reset()` works correctly by maintaining the original mock structure.
 
 ## 📄 License
 
