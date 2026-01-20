@@ -20,25 +20,58 @@ npm install lil-mocky
 ## 🚀 Quick Start
 
 ```javascript
+const { expect } = require('chai');
 const mocky = require('lil-mocky');
 
-// Create a simple mock function
-const mock = mocky.function().args('name', 'age').build();
-mock.ret('success');
+describe('User API', () => {
+  it('fetches user data', () => {
+    // Create a mock API object
+    const api = mocky.object({
+      fetchUser: mocky.function().args('id')
+    }).build();
 
-mock('Alice', 30);
+    // Configure what it returns
+    api.fetchUser.ret({ name: 'Alice', age: 30 });
 
-console.log(mock.calls(0)); // { name: 'Alice', age: 30 }
-console.log(mock.calls().length); // 1
+    // Call it in your code under test
+    const user = api.fetchUser(123);
 
-// Spy on an existing method
-const obj = { greet: (name) => `Hello, ${name}!` };
-const spy = mocky.spy(obj, 'greet');
-
-obj.greet('World');
-console.log(spy.calls(0)); // ['World']
-spy.restore();
+    // Verify the results
+    expect(user).to.deep.equal({ name: 'Alice', age: 30 });
+    expect(api.fetchUser.calls(0)).to.deep.equal({ id: 123 });
+  });
+});
 ```
+
+## 🧠 Core Concepts
+
+**Builders create mocks:**
+```javascript
+const builder = mocky.function().args('x', 'y');  // Builder (configure)
+const mock = builder.build();                      // Mock (use in tests)
+```
+
+**Configure with `.ret()`, verify with `.calls()`:**
+```javascript
+mock.ret('value');     // Set what it returns
+mock('a', 'b');        // Call it
+mock.calls(0);         // { x: 'a', y: 'b' } - check what was called
+```
+
+**Reset clears everything:**
+```javascript
+mock.reset();          // Clear calls and return values
+```
+
+**Four mock types:**
+- `mocky.function()` - Mock functions
+- `mocky.object()` - Mock objects (with methods and properties)
+- `mocky.class()` - Mock classes (with per-instance behavior)
+- `mocky.spy()` - Track calls to existing methods
+
+**That's it!** You're ready to start writing tests. 🎉
+
+---
 
 ## 📖 API Reference
 
@@ -77,6 +110,13 @@ mock(5, 3); // Returns 100
 const mock = mocky.function().async().build();
 await mock(); // Returns a promise
 ```
+
+**Context object properties:**
+- `context.args` - Processed arguments (from `.args()` config)
+- `context.ret` - Value set via `.ret()`
+- `context.call` - Call number (1-indexed)
+- `context.self` - The `this` context
+- `context.state` - Internal state object
 
 ### 📦 Object Mocks
 
@@ -183,7 +223,9 @@ spy.calls().length; // 1
 spy.restore();
 ```
 
-## 🎨 Advanced Usage
+---
+
+## 🎨 Advanced Patterns
 
 ### Understanding .ret() vs Custom Implementations
 
@@ -262,66 +304,6 @@ mock.ret(new Error('Test error'));
 
 mock(); // Throws 'Test error'
 ```
-
-### Custom Context
-
-Access full context in custom function bodies:
-
-```javascript
-const mock = mocky.function((context) => {
-  // context.self - The 'this' context
-  // context.state - Internal state object
-  // context.call - Call number (1-indexed)
-  // context.args - Processed arguments
-  // context.rawArgs - Unprocessed arguments array
-  // context.original - Original function (if set via .original())
-  // context.ret - Configured return value
-
-  return context.ret || 'default';
-}).args('x', 'y').build();
-```
-
-### Resetting Mocks
-
-All mocks support `.reset()` to clear state:
-
-```javascript
-const mock = mocky.function().build();
-mock.ret('value');
-mock('test');
-
-mock.calls().length; // 1
-
-mock.reset();
-
-mock.calls().length; // 0
-mock(); // Returns undefined (ret cleared)
-```
-
-### Working with Null and Undefined
-
-Both `null` and `undefined` are valid property values:
-
-```javascript
-const mock = mocky.object({
-  nullValue: null,        // Explicitly null
-  undefinedValue: undefined, // Explicitly undefined (or just omit)
-  zeroValue: 0,          // Falsy but valid
-  emptyString: '',       // Falsy but valid
-  method: mocky.function()
-}).build();
-
-// All properties are accessible
-mock.nullValue;        // null
-mock.undefinedValue;   // undefined
-
-// Reset restores all initial values including null/undefined
-mock.nullValue = 'changed';
-mock.reset();
-mock.nullValue;        // null (restored)
-```
-
-## 💡 Common Patterns
 
 ### Fallback Pattern
 
@@ -454,7 +436,130 @@ await mockDB.fetch('/api'); // { data: [1, 2, 3] }
 mockDB.reset();
 ```
 
+### Working with Null and Undefined
+
+Both `null` and `undefined` are valid property values:
+
+```javascript
+const mock = mocky.object({
+  nullValue: null,        // Explicitly null
+  undefinedValue: undefined, // Explicitly undefined (or just omit)
+  zeroValue: 0,          // Falsy but valid
+  emptyString: '',       // Falsy but valid
+  method: mocky.function()
+}).build();
+
+// All properties are accessible
+mock.nullValue;        // null
+mock.undefinedValue;   // undefined
+
+// Reset restores all initial values including null/undefined
+mock.nullValue = 'changed';
+mock.reset();
+mock.nullValue;        // null (restored)
+```
+
+### Resetting Mocks
+
+All mocks support `.reset()` to clear state:
+
+```javascript
+const mock = mocky.function().build();
+mock.ret('value');
+mock('test');
+
+mock.calls().length; // 1
+
+mock.reset();
+
+mock.calls().length; // 0
+mock(); // Returns undefined (ret cleared)
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### "My mock returns undefined"
+
+```javascript
+// ❌ Forgot to call .build()
+const mock = mocky.function().args('x');
+mock.ret('value'); // Error: mock.ret is not a function
+
+// ✅ Always call .build()
+const mock = mocky.function().args('x').build();
+mock.ret('value');
+```
+
+### "TypeError: Cannot read properties of undefined"
+
+```javascript
+// ❌ Trying to configure before building
+const builder = mocky.function();
+builder.ret('value'); // Error: builder doesn't have .ret()
+
+// ✅ Build first, then configure
+const mock = builder.build();
+mock.ret('value');
+```
+
+### "My mock property won't change"
+
+```javascript
+const mock = mocky.object({
+  method: mocky.function()
+}).build();
+
+// ❌ Mock functions are read-only after .build()
+mock.method = () => 'new'; // TypeError!
+
+// ✅ Define everything during building
+const mock = mocky.object({
+  method: mocky.function((context) => 'new')
+}).build();
+```
+
+### ".reset() doesn't work on my property"
+
+This is a known limitation with `mocky.property()`:
+
+```javascript
+const mock = mocky.object({
+  accessor: mocky.property()
+}).build();
+
+mock.accessor = 'value';
+mock.reset();
+// accessor still equals 'value' - known limitation
+
+// Use plain properties instead if you need reset:
+const mock = mocky.object({
+  accessor: undefined
+}).build();
+
+mock.accessor = 'value';
+mock.reset();
+// accessor now undefined (restored)
+```
+
+### "My .ret() function isn't being called"
+
+```javascript
+// ❌ .ret() stores values, doesn't call them
+mock.ret(() => compute()); // Returns the function itself
+
+// ✅ Use custom implementation for dynamic logic
+const mock = mocky.function((context) => {
+  return compute();
+}).build();
+```
+
+---
+
 ## 🧪 Testing with Mocha/Chai
+
+Complete test example:
 
 ```javascript
 const { expect } = require('chai');
@@ -482,9 +587,11 @@ describe('My Module', () => {
 });
 ```
 
-## 🔄 Comparison with Jest
+---
 
-lil-mocky provides similar functionality to Jest mocks but with a builder-based API:
+## 🔄 Coming from Jest?
+
+Migration guide for Jest users:
 
 | Jest | lil-mocky |
 |------|-----------|
@@ -495,16 +602,14 @@ lil-mocky provides similar functionality to Jest mocks but with a builder-based 
 | `spy.mockRestore()` | `spy.restore()` |
 
 **Key differences:**
-- **Builder pattern**: lil-mocky uses chainable builders for configuration
-- **Named arguments**: Built-in support for named argument tracking
+- **Builder pattern**: Explicit configuration via chainable builders before `.build()`
+- **Named arguments**: Built-in support for named argument tracking with `.args()`
 - **Per-instance class mocks**: Configure different behavior for each class instance
-- **Simpler API**: Fewer concepts to learn, more predictable behavior
+- **Simpler API**: Fewer concepts, more predictable behavior
+
+---
 
 ## 📝 Notes
-
-### Breaking Changes
-
-**v1.x**: Functions without `.args()` configuration now return an arguments array in `.calls()` instead of `null`. This enables spy functionality but may affect existing code that expects `null`.
 
 ### Builder vs. Built Mocks
 
@@ -551,6 +656,8 @@ mock.method = null; // ❌ ERROR - mock functions are read-only
 ```
 
 **Why?** This prevents accidental bugs and ensures `.reset()` works correctly by maintaining the original mock structure.
+
+---
 
 ## 📄 License
 
