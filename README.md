@@ -318,6 +318,30 @@ expect(api.post.calls(0)).to.deep.equal({
 expect(result).to.deep.equal({ id: 123 });
 ```
 
+**Immutability after .build():**
+
+Once you call `.build()`, the mock object's structure is immutable. You cannot add or reassign properties:
+
+```javascript
+// ❌ WRONG - can't modify after .build()
+const mock = mocky.object({
+  method: mocky.function()
+}).build();
+
+mock.method = newImplementation; // TypeError: Cannot assign to read only property
+mock.newMethod = mocky.function().build(); // TypeError: Cannot add property
+
+// ✅ RIGHT - define everything when building
+const mock = mocky.object({
+  method: mocky.function((context) => {
+    // Your custom implementation here
+    return 'result';
+  })
+}).build();
+```
+
+This immutability prevents bugs and ensures `.reset()` works correctly. To change behavior during tests, use `.ret()` or `.reset()` instead of reassigning properties.
+
 **Nested mocks for complex structures:**
 
 ```javascript
