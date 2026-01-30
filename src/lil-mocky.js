@@ -12,6 +12,7 @@ function functionBuilder(body) {
 	};
 
 	return {
+		__mockyFunction: true,
 		async: function() {
 			options.async = true;
 			return this;
@@ -146,6 +147,7 @@ function objectBuilder(props) {
 	const options = { props };
 
 	return {
+		__mockyObject: true,
 		build: function(parent, key) {
 			const mock = createObjectWithProps(options.props);
 
@@ -208,6 +210,7 @@ function classBuilder(members) {
 	const options = { members };
 
 	return {
+		__mockyClass: true,
 		build: function(parent, key) {
 			const state = {};
 			const Mock = createClass(state, options);
@@ -227,7 +230,7 @@ function createClass(state, options) {
 		if (!state.descriptions[index])
 			state.descriptions[index] = createObjectWithProps(options.members);
 
-		Object.defineProperty(this, '_mockIndex', { value: index });
+		Object.defineProperty(this, '__mockyInst', { value: index });
 
 		if (typeof state.descriptions[index].constructor === 'function')
 			state.descriptions[index].constructor.call(this, ...arguments);
@@ -241,10 +244,21 @@ function createClass(state, options) {
 
 		const member = options.members[key];
 
-		if (typeof member?.build === 'function') {
+		if (member?.__mockyFunction) {
 			Mock.prototype[key] = function(...args) {
-				return state.descriptions[this._mockIndex][key].apply(this, args);
+				return state.descriptions[this.__mockyInst][key].apply(this, args);
 			};
+		} else {
+			Object.defineProperty(Mock.prototype, key, {
+				get: function() {
+					return state.descriptions[this.__mockyInst][key];
+				},
+				set: function(value) {
+					state.descriptions[this.__mockyInst][key] = value;
+				},
+				enumerable: true,
+				configurable: true
+			});
 		}
 	}
 
@@ -272,32 +286,7 @@ function wireClass(Mock, state, options) {
 }
 
 function propertyBuilder() {
-	return {
-		build: function(parent, key) {
-			const state = {};
-
-			if (parent) {
-				parent[key] = {};
-				wireProperty(parent[key], state);
-				Object.defineProperty(parent, key, {
-					get: () => {
-						return state.value;
-					},
-					set: (value) => {
-						state.value = value;
-					}
-				});
-			}
-		}
-	};
-}
-
-function wireProperty(mock, state) {
-	mock.reset = () => {
-		state.value = undefined;
-	};
-
-	return mock;
+	return undefined;
 }
 
 function deepClone(target) {

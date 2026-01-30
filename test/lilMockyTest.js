@@ -65,22 +65,30 @@ describe('lil-mocky', () => {
 			// Stored call should be unchanged
 			expect(mock.calls(0).data.nested.value).to.equal('original');
 		});
-		it('will reset function state', async () => {
-			const mock = mocky.create(mocky.function().args('arg'));
-			mock.ret('first-ret');
+		it('will reset function state including calls, returns and data', async () => {
+			const mock = mocky.create(mocky.function((context) => {
+				context.state.data.counter = (context.state.data.counter || 0) + 1;
+				return context.ret;
+			}).args('arg'));
+			mock.ret('test-ret');
 
 			mock('call1');
 			mock('call2');
 
 			expect(mock.calls().length).to.equal(2);
+			expect(mock.data('counter')).to.equal(2);
 
 			mock.reset();
 
 			expect(mock.calls().length).to.equal(0);
 			expect(mock('call3')).to.equal(undefined); // Return values cleared
+			expect(mock.data('counter')).to.equal(1); // Restarted from scratch
+			expect(mock.data()).to.deep.equal({ counter: 1 });
 		});
-		it('will access all context properties in custom body', async () => {
+		it('will provide context with call, args, ret, state and data', async () => {
 			const mock = mocky.create(mocky.function((context) => {
+				context.state.data.allItems = context.state.data.allItems || [];
+				context.state.data.allItems.push(...context.args.items);
 				return {
 					call: context.call,
 					args: context.args,
@@ -88,45 +96,20 @@ describe('lil-mocky', () => {
 					hasState: typeof context.state === 'object',
 					hasData: typeof context.state.data === 'object'
 				};
-			}).args('testArg'));
+			}).args('items'));
 			mock.ret('custom-ret');
 
-			const result = mock('test-value');
+			const result = mock(['a', 'b']);
 
-			expect(result.call).to.equal(1); // First call
-			expect(result.args).to.deep.equal({ testArg: 'test-value' });
+			expect(result.call).to.equal(1);
+			expect(result.args).to.deep.equal({ items: ['a', 'b'] });
 			expect(result.ret).to.equal('custom-ret');
 			expect(result.hasState).to.equal(true);
 			expect(result.hasData).to.equal(true);
-		});
-		it('will access custom data via mock.data()', async () => {
-			const mock = mocky.create(mocky.function((context) => {
-				context.state.data.allItems = context.state.data.allItems || [];
-				context.state.data.allItems.push(...context.args.items);
-			}).args('items'));
 
-			mock(['a', 'b']);
+			// Data accumulates across calls
 			mock(['c']);
-			mock(['d', 'e', 'f']);
-
-			expect(mock.data('allItems')).to.deep.equal(['a', 'b', 'c', 'd', 'e', 'f']);
-			expect(mock.data()).to.deep.equal({ allItems: ['a', 'b', 'c', 'd', 'e', 'f'] });
-		});
-		it('will clear custom data on reset', async () => {
-			const mock = mocky.create(mocky.function((context) => {
-				context.state.data.counter = (context.state.data.counter || 0) + 1;
-			}));
-
-			mock();
-			mock();
-			mock();
-
-			expect(mock.data('counter')).to.equal(3);
-
-			mock.reset();
-
-			expect(mock.data('counter')).to.equal(undefined);
-			expect(mock.data()).to.deep.equal({});
+			expect(mock.data('allItems')).to.deep.equal(['a', 'b', 'c']);
 		});
 	});
 
@@ -194,148 +177,73 @@ describe('lil-mocky', () => {
 			mock.accessor = 'newValue';
 			expect(mock.accessor).to.equal('newValue');
 		});
-		it('will have property reset limitation', async () => {
-			const mock = mocky.create(mocky.object({
-				accessor: mocky.property()
-			}));
-
-			mock.accessor = 'testValue';
-			expect(mock.accessor).to.equal('testValue');
-
-			// Note: Property reset doesn't work through object.reset() because
-			// the wired object with reset() is replaced by defineProperty
-			// This is a known limitation of the property builder
-			mock.reset();
-
-			// Property value persists after reset (known limitation)
-			expect(mock.accessor).to.equal('testValue');
-		});
-		it('will reset plain properties to initial values', async () => {
-			const mock = mocky.create(mocky.object({
-				counter: 0,
-				name: 'Alice',
-				method: mocky.function()
-			}));
-
-			mock.counter = 100;
-			mock.name = 'Bob';
-			mock.method.ret('test');
-			mock.method();
-
-			mock.reset();
-
-			expect(mock.counter).to.equal(0);
-			expect(mock.name).to.equal('Alice');
-			expect(mock.method.calls().length).to.equal(0);
-		});
-		it('will delete properties added after creation', async () => {
-			const mock = mocky.create(mocky.object({
-				initial: 'value'
-			}));
-
-			mock.added = 'new';
-			expect(mock.added).to.equal('new');
-
-			mock.reset();
-
-			expect(mock.initial).to.equal('value');
-			expect(mock.added).to.equal(undefined);
-			expect('added' in mock).to.equal(false);
-		});
-		it('will reset object with mixed property types', async () => {
+		it('will reset all property types to initial values', async () => {
 			const mock = mocky.create(mocky.object({
 				counter: 42,
+				name: 'Alice',
 				method: mocky.function(),
 				accessor: mocky.property()
 			}));
 
+			// Modify all properties
 			mock.counter = 100;
+			mock.name = 'Bob';
 			mock.method.ret('test');
 			mock.method();
 			mock.accessor = 'value';
 
+			// Add dynamic property
+			mock.added = 'new';
+
 			mock.reset();
 
+			// Plain values reset
 			expect(mock.counter).to.equal(42);
+			expect(mock.name).to.equal('Alice');
+
+			// Methods reset
 			expect(mock.method.calls().length).to.equal(0);
-			expect(mock.accessor).to.equal('value');
+
+			// mocky.property() resets to undefined
+			expect(mock.accessor).to.equal(undefined);
+
+			// Dynamic properties deleted
+			expect(mock.added).to.equal(undefined);
+			expect('added' in mock).to.equal(false);
 		});
-		it('will support Symbol properties', async () => {
+		it('will support Symbol properties and reset them correctly', async () => {
 			const customSymbol = Symbol('custom');
-
-			const mock = mocky.create(mocky.object({
-				[Symbol.iterator]: mocky.function(),
-				[customSymbol]: 'symbolValue',
-				regularProp: 'regularValue'
-			}));
-
-			// Verify Symbol.iterator exists and is a function
-			expect(typeof mock[Symbol.iterator]).to.equal('function');
-
-			// Verify custom symbol property exists
-			expect(mock[customSymbol]).to.equal('symbolValue');
-
-			// Verify regular property exists
-			expect(mock.regularProp).to.equal('regularValue');
-
-			// Configure and use Symbol.iterator
-			mock[Symbol.iterator].ret('iteratorResult');
-			expect(mock[Symbol.iterator]()).to.equal('iteratorResult');
-			expect(mock[Symbol.iterator].calls().length).to.equal(1);
-		});
-		it('will reset Symbol properties correctly', async () => {
-			const customSymbol = Symbol('custom');
-
-			const mock = mocky.create(mocky.object({
-				[Symbol.iterator]: mocky.function().args('arg'),
-				[customSymbol]: 'initialValue',
-				regularProp: 'initial'
-			}));
-
-			// Modify all properties
-			mock[Symbol.iterator].ret('testRet');
-			mock[Symbol.iterator]('testArg');
-			mock[customSymbol] = 'modifiedValue';
-			mock.regularProp = 'modified';
-
-			// Verify modifications
-			expect(mock[Symbol.iterator]('testArg')).to.equal('testRet');
-			expect(mock[Symbol.iterator].calls().length).to.equal(2);
-			expect(mock[customSymbol]).to.equal('modifiedValue');
-			expect(mock.regularProp).to.equal('modified');
-
-			// Reset
-			mock.reset();
-
-			// Verify Symbol function mock was reset
-			expect(mock[Symbol.iterator].calls().length).to.equal(0);
-			expect(mock[Symbol.iterator]()).to.equal(undefined);
-
-			// Verify Symbol plain property was restored
-			expect(mock[customSymbol]).to.equal('initialValue');
-
-			// Verify regular property was restored
-			expect(mock.regularProp).to.equal('initial');
-		});
-		it('will delete Symbol properties added after creation', async () => {
-			const initialSymbol = Symbol('initial');
 			const addedSymbol = Symbol('added');
 
 			const mock = mocky.create(mocky.object({
-				[initialSymbol]: 'initial'
+				[Symbol.iterator]: mocky.function(),
+				[customSymbol]: 'initialValue'
 			}));
 
-			// Add a Symbol property after creation
+			// Verify Symbol properties work
+			expect(typeof mock[Symbol.iterator]).to.equal('function');
+			expect(mock[customSymbol]).to.equal('initialValue');
+
+			// Configure and use Symbol function
+			mock[Symbol.iterator].ret('iteratorResult');
+			expect(mock[Symbol.iterator]()).to.equal('iteratorResult');
+			expect(mock[Symbol.iterator].calls().length).to.equal(1);
+
+			// Modify Symbol value and add dynamic Symbol
+			mock[customSymbol] = 'modifiedValue';
 			mock[addedSymbol] = 'added';
-			expect(mock[addedSymbol]).to.equal('added');
 
 			// Reset
 			mock.reset();
 
-			// Initial Symbol property should remain
-			expect(mock[initialSymbol]).to.equal('initial');
+			// Symbol function mock was reset
+			expect(mock[Symbol.iterator].calls().length).to.equal(0);
+			expect(mock[Symbol.iterator]()).to.equal(undefined);
 
-			// Added Symbol property should be deleted
+			// Symbol plain property was restored
+			expect(mock[customSymbol]).to.equal('initialValue');
+
+			// Dynamic Symbol property was deleted
 			expect(mock[addedSymbol]).to.equal(undefined);
 			expect(Object.getOwnPropertySymbols(mock).includes(addedSymbol)).to.equal(false);
 		});
@@ -515,6 +423,40 @@ describe('lil-mocky', () => {
 			expect(Mock.inst(0).run.calls().length).to.equal(1); // Just this one call
 		});
 
+		it('will reset plain value properties to initial values', async () => {
+			const Mock = mocky.create(mocky.class({
+				name: null,
+				count: 0
+			}));
+
+			// Create and modify instances
+			const inst1 = new Mock();
+			inst1.name = 'first';
+			inst1.count = 10;
+
+			const inst2 = new Mock();
+			inst2.name = 'second';
+			inst2.count = 20;
+
+			expect(Mock.numInsts()).to.equal(2);
+			expect(Mock.inst(0).name).to.equal('first');
+			expect(Mock.inst(1).count).to.equal(20);
+
+			// Reset
+			Mock.reset();
+
+			expect(Mock.numInsts()).to.equal(0);
+
+			// After reset, descriptions are fresh with initial values
+			expect(Mock.inst(0).name).to.equal(null);
+			expect(Mock.inst(0).count).to.equal(0);
+
+			// New instance gets initial values
+			const inst3 = new Mock();
+			expect(inst3.name).to.equal(null);
+			expect(inst3.count).to.equal(0);
+		});
+
 		it('will pre-configure instances before instantiation', async () => {
 			const Mock = mocky.create(mocky.class({
 				run: mocky.function().args('arg')
@@ -593,44 +535,7 @@ describe('lil-mocky', () => {
 			expect(inst.getValue()).to.equal('default'); // Falls back to call 0
 		});
 
-		it('will allow a class to extend the mock class', () => {
-			const Mock = mocky.create(mocky.class({
-				getValue: mocky.function().args('x')
-			}));
-
-			Mock.inst().getValue.ret('mock-value');
-
-			class Child extends Mock {
-			}
-
-			const child = new Child();
-			expect(child.getValue('test')).to.equal('mock-value');
-			expect(Mock.inst().getValue.calls(0)).to.deep.equal({ x: 'test' });
-		});
-
-		it('will allow child class to override mock method and call super', () => {
-			const Mock = mocky.create(mocky.class({
-				getValue: mocky.function().args('x')
-			}));
-
-			Mock.inst().getValue.ret('mock-value');
-
-			class Child extends Mock {
-				getValue(x) {
-					const parentResult = super.getValue(x);
-					return `child-${parentResult}`;
-				}
-			}
-
-			const child = new Child();
-			const result = child.getValue('test');
-
-			// Child's method should run and wrap the parent's result
-			expect(result).to.equal('child-mock-value');
-			expect(Mock.inst().getValue.calls(0)).to.deep.equal({ x: 'test' });
-		});
-
-		it('will allow child class to call super in constructor', () => {
+		it('will support class inheritance with super calls', () => {
 			const Mock = mocky.create(mocky.class({
 				constructor: mocky.function((context) => {
 					context.self.mockInitialized = true;
@@ -647,6 +552,10 @@ describe('lil-mocky', () => {
 					this.childInitialized = true;
 					this.childValue = value * 2;
 				}
+				getValue(x) {
+					const parentResult = super.getValue(x);
+					return `child-${parentResult}`;
+				}
 			}
 
 			const child = new Child(10);
@@ -660,11 +569,13 @@ describe('lil-mocky', () => {
 			expect(child.childInitialized).to.equal(true);
 			expect(child.childValue).to.equal(20);
 
-			// Methods should still work
-			expect(child.getValue('test')).to.equal('mock-value');
+			// Child's overridden method calls super and wraps result
+			const result = child.getValue('test');
+			expect(result).to.equal('child-mock-value');
+			expect(Mock.inst().getValue.calls(0)).to.deep.equal({ x: 'test' });
 		});
 
-		it('will not expose _mockIndex in deep equal comparisons', () => {
+		it('will not expose __mockyInst in deep equal comparisons', () => {
 			const Mock = mocky.create(mocky.class({
 				constructor: mocky.function((context) => {
 					context.self.name = context.args.name;
@@ -675,40 +586,125 @@ describe('lil-mocky', () => {
 
 			expect(instance).to.deep.equal({ name: 'test' });
 		});
+
+		it('will sync plain value members between instance and Mock.inst()', () => {
+			const Mock = mocky.create(mocky.class({
+				name: null,
+				count: 0
+			}));
+
+			const inst = new Mock();
+
+			// Initial values from definition
+			expect(inst.name).to.equal(null);
+			expect(inst.count).to.equal(0);
+
+			// Setting on instance syncs to Mock.inst()
+			inst.name = 'test';
+			inst.count = 42;
+			expect(Mock.inst(0).name).to.equal('test');
+			expect(Mock.inst(0).count).to.equal(42);
+
+			// Setting on Mock.inst() syncs to instance
+			Mock.inst(0).name = 'changed';
+			expect(inst.name).to.equal('changed');
+		});
+
+		it('will isolate plain value members between class instances', () => {
+			const Mock = mocky.create(mocky.class({
+				value: null
+			}));
+
+			const inst1 = new Mock();
+			const inst2 = new Mock();
+
+			inst1.value = 'first';
+			inst2.value = 'second';
+
+			expect(inst1.value).to.equal('first');
+			expect(inst2.value).to.equal('second');
+			expect(Mock.inst(0).value).to.equal('first');
+			expect(Mock.inst(1).value).to.equal('second');
+		});
+
+		it('will allow pre-configuring plain value members before instantiation', () => {
+			const Mock = mocky.create(mocky.class({
+				config: null
+			}));
+
+			// Pre-configure before instantiation
+			Mock.inst(0).config = 'preset-value';
+
+			const inst = new Mock();
+			expect(inst.config).to.equal('preset-value');
+		});
+
+		it('will support mixing plain values and methods in class', () => {
+			const Mock = mocky.create(mocky.class({
+				name: null,
+				greet: mocky.function().args('greeting')
+			}));
+
+			Mock.inst().greet.ret('Hello!');
+
+			const inst = new Mock();
+			inst.name = 'World';
+
+			expect(inst.name).to.equal('World');
+			expect(Mock.inst(0).name).to.equal('World');
+			expect(inst.greet('Hi')).to.equal('Hello!');
+			expect(Mock.inst().greet.calls(0)).to.deep.equal({ greeting: 'Hi' });
+		});
+
+		it('will support nested objects with methods', () => {
+			const Mock = mocky.create(mocky.class({
+				db: mocky.object({
+					query: mocky.function().args('sql'),
+					close: mocky.function()
+				})
+			}));
+
+			Mock.inst(0).db.query.ret({ rows: ['a', 'b'] });
+			Mock.inst(0).db.close.ret(true);
+
+			const inst = new Mock();
+
+			expect(inst.db.query('SELECT *')).to.deep.equal({ rows: ['a', 'b'] });
+			expect(inst.db.close()).to.equal(true);
+			expect(Mock.inst(0).db.query.calls(0)).to.deep.equal({ sql: 'SELECT *' });
+		});
 	});
 
 	describe('spy', () => {
-		it('will spy on method and call through to original', () => {
+		it('will spy on method, call through, track calls and preserve this', () => {
 			const obj = {
+				value: 42,
 				greet: function(name) {
 					return `Hello, ${name}!`;
+				},
+				getValue: function() {
+					return this.value;
 				}
 			};
 
-			const spy = mocky.spy(obj, 'greet');
+			const greetSpy = mocky.spy(obj, 'greet');
+			const valueSpy = mocky.spy(obj, 'getValue');
 
-			const result = obj.greet('World');
+			// Calls through to original
+			expect(obj.greet('World')).to.equal('Hello, World!');
+			expect(obj.greet('Test')).to.equal('Hello, Test!');
 
-			expect(result).to.equal('Hello, World!');
-			expect(spy.calls().length).to.equal(1);
-			expect(spy.calls(0)).to.deep.equal(['World']);
-		});
+			// Tracks multiple calls
+			expect(greetSpy.calls().length).to.equal(2);
+			expect(greetSpy.calls(0)).to.deep.equal(['World']);
+			expect(greetSpy.calls(1)).to.deep.equal(['Test']);
 
-		it('will track multiple calls to spied method', () => {
-			const obj = {
-				add: function(a, b) {
-					return a + b;
-				}
-			};
+			// Preserves this context
+			expect(obj.getValue()).to.equal(42);
+			expect(valueSpy.calls().length).to.equal(1);
 
-			const spy = mocky.spy(obj, 'add');
-
-			expect(obj.add(2, 3)).to.equal(5);
-			expect(obj.add(10, 20)).to.equal(30);
-
-			expect(spy.calls().length).to.equal(2);
-			expect(spy.calls(0)).to.deep.equal([2, 3]);
-			expect(spy.calls(1)).to.deep.equal([10, 20]);
+			greetSpy.restore();
+			valueSpy.restore();
 		});
 
 		it('will override return value with ret() while still tracking', () => {
@@ -725,22 +721,6 @@ describe('lil-mocky', () => {
 
 			expect(result).to.equal('overridden');
 			expect(spy.calls().length).to.equal(1);
-		});
-
-		it('will spy with replacement function', () => {
-			const obj = {
-				calculate: function(x, y) {
-					return x * y;
-				}
-			};
-
-			const spy = mocky.spy(obj, 'calculate', mocky.function().args('x', 'y'));
-			spy.ret(100);
-
-			const result = obj.calculate(5, 3);
-
-			expect(result).to.equal(100);
-			expect(spy.calls(0)).to.deep.equal({ x: 5, y: 3 });
 		});
 
 		it('will restore original method', () => {
@@ -779,54 +759,15 @@ describe('lil-mocky', () => {
 			spy.restore();
 		});
 
-		it('will spy with custom replacement body that calls through', () => {
-			const obj = {
-				multiply: function(a, b) {
-					return a * b;
-				}
-			};
-
-			const original = obj.multiply;
-			const spy = mocky.spy(obj, 'multiply', mocky.function((context) => {
-				const result = original.apply(context.self, context.rawArgs);
-				return result * 2; // Double the result
-			}));
-
-			const result = obj.multiply(3, 4);
-
-			expect(result).to.equal(24); // (3 * 4) * 2
-			expect(spy.calls().length).to.equal(1);
-
-			spy.restore();
-		});
-
-		it('will preserve this context when spying', () => {
-			const obj = {
-				value: 42,
-				getValue: function() {
-					return this.value;
-				}
-			};
-
-			const spy = mocky.spy(obj, 'getValue');
-
-			const result = obj.getValue();
-
-			expect(result).to.equal(42);
-			expect(spy.calls().length).to.equal(1);
-
-			spy.restore();
-		});
-
-		it('will provide context.original in replacement builder', () => {
+		it('will spy with replacement function and provide context.original', () => {
 			const obj = {
 				add: function(a, b) {
 					return a + b;
 				}
 			};
 
+			// Replacement with args and context.original
 			const spy = mocky.spy(obj, 'add', mocky.function((context) => {
-				// Call original and modify result
 				const originalResult = context.original.apply(context.self, context.rawArgs);
 				return originalResult * 10;
 			}).args('x', 'y'));

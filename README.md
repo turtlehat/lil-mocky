@@ -408,7 +408,8 @@ Mock classes with per-instance behavior - perfect for services that get instanti
 const Logger = mocky.class({
   constructor: mocky.function().args('moduleName'),
   info: mocky.function().args('message'),
-  error: mocky.function().args('message')
+  error: mocky.function().args('message'),
+  level: 'info'
 }).build();
 
 // Test code that creates multiple logger instances
@@ -466,7 +467,11 @@ expect(Logger.numInsts()).to.equal(2);
 // Configure behavior BEFORE instances are created
 const Database = mocky.class({
   constructor: mocky.function().args('connectionString'),
-  query: mocky.function().args('sql')
+  query: mocky.function().args('sql'),
+  pool: mocky.object({
+    acquire: mocky.function(),
+    release: mocky.function()
+  })
 }).build();
 
 // First instance returns user data
