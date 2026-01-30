@@ -663,6 +663,18 @@ describe('lil-mocky', () => {
 			// Methods should still work
 			expect(child.getValue('test')).to.equal('mock-value');
 		});
+
+		it('will not expose _mockIndex in deep equal comparisons', () => {
+			const Mock = mocky.create(mocky.class({
+				constructor: mocky.function((context) => {
+					context.self.name = context.args.name;
+				}).args('name')
+			}));
+
+			const instance = new Mock('test');
+
+			expect(instance).to.deep.equal({ name: 'test' });
+		});
 	});
 
 	describe('spy', () => {

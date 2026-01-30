@@ -227,7 +227,7 @@ function createClass(state, options) {
 		if (!state.descriptions[index])
 			state.descriptions[index] = createObjectWithProps(options.members);
 
-		this._mockIndex = index;
+		Object.defineProperty(this, '_mockIndex', { value: index });
 
 		if (typeof state.descriptions[index].constructor === 'function')
 			state.descriptions[index].constructor.call(this, ...arguments);
