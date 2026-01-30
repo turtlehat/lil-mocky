@@ -563,6 +563,77 @@ describe('lil-mocky', () => {
 			expect(inst.getValue()).to.equal('second-call');
 			expect(inst.getValue()).to.equal('default'); // Falls back to call 0
 		});
+
+		it('will allow a class to extend the mock class', () => {
+			const Mock = mocky.create(mocky.class({
+				getValue: mocky.function().args('x')
+			}));
+
+			Mock.inst().getValue.ret('mock-value');
+
+			class Child extends Mock {
+			}
+
+			const child = new Child();
+			expect(child.getValue('test')).to.equal('mock-value');
+			expect(Mock.inst().getValue.calls(0)).to.deep.equal({ x: 'test' });
+		});
+
+		it('will allow child class to override mock method and call super', () => {
+			const Mock = mocky.create(mocky.class({
+				getValue: mocky.function().args('x')
+			}));
+
+			Mock.inst().getValue.ret('mock-value');
+
+			class Child extends Mock {
+				getValue(x) {
+					const parentResult = super.getValue(x);
+					return `child-${parentResult}`;
+				}
+			}
+
+			const child = new Child();
+			const result = child.getValue('test');
+
+			// Child's method should run and wrap the parent's result
+			expect(result).to.equal('child-mock-value');
+			expect(Mock.inst().getValue.calls(0)).to.deep.equal({ x: 'test' });
+		});
+
+		it('will allow child class to call super in constructor', () => {
+			const Mock = mocky.create(mocky.class({
+				constructor: mocky.function((context) => {
+					context.self.mockInitialized = true;
+					context.self.mockValue = context.args.value;
+				}).args('value'),
+				getValue: mocky.function().args('x')
+			}));
+
+			Mock.inst().getValue.ret('mock-value');
+
+			class Child extends Mock {
+				constructor(value) {
+					super(value);
+					this.childInitialized = true;
+					this.childValue = value * 2;
+				}
+			}
+
+			const child = new Child(10);
+
+			// Mock constructor should have run
+			expect(child.mockInitialized).to.equal(true);
+			expect(child.mockValue).to.equal(10);
+			expect(Mock.inst().constructor.calls(0)).to.deep.equal({ value: 10 });
+
+			// Child constructor should have run after
+			expect(child.childInitialized).to.equal(true);
+			expect(child.childValue).to.equal(20);
+
+			// Methods should still work
+			expect(child.getValue('test')).to.equal('mock-value');
+		});
 	});
 
 	describe('spy', () => {

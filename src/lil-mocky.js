@@ -218,19 +218,34 @@ function classBuilder(members) {
 }
 
 function createClass(state, options) {
-	return function() {
+	const Mock = function() {
 		const index = state.numInstances;
 
 		if (!state.descriptions[index])
 			state.descriptions[index] = createObjectWithProps(options.members);
 
-		Object.defineProperties(this, Object.getOwnPropertyDescriptors(state.descriptions[index]));
+		this._mockIndex = index;
 
 		if (typeof state.descriptions[index].constructor === 'function')
 			state.descriptions[index].constructor.call(this, ...arguments);
 
 		state.numInstances++;
 	};
+
+	for (const key of Reflect.ownKeys(options.members)) {
+		if (key === 'constructor')
+			continue;
+
+		const member = options.members[key];
+
+		if (typeof member?.build === 'function') {
+			Mock.prototype[key] = function(...args) {
+				return state.descriptions[this._mockIndex][key].apply(this, args);
+			};
+		}
+	}
+
+	return Mock;
 }
 
 function wireClass(Mock, state, options) {
