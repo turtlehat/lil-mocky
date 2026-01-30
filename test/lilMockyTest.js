@@ -99,6 +99,35 @@ describe('lil-mocky', () => {
 			expect(result.hasState).to.equal(true);
 			expect(result.hasData).to.equal(true);
 		});
+		it('will access custom data via mock.data()', async () => {
+			const mock = mocky.create(mocky.function((context) => {
+				context.state.data.allItems = context.state.data.allItems || [];
+				context.state.data.allItems.push(...context.args.items);
+			}).args('items'));
+
+			mock(['a', 'b']);
+			mock(['c']);
+			mock(['d', 'e', 'f']);
+
+			expect(mock.data('allItems')).to.deep.equal(['a', 'b', 'c', 'd', 'e', 'f']);
+			expect(mock.data()).to.deep.equal({ allItems: ['a', 'b', 'c', 'd', 'e', 'f'] });
+		});
+		it('will clear custom data on reset', async () => {
+			const mock = mocky.create(mocky.function((context) => {
+				context.state.data.counter = (context.state.data.counter || 0) + 1;
+			}));
+
+			mock();
+			mock();
+			mock();
+
+			expect(mock.data('counter')).to.equal(3);
+
+			mock.reset();
+
+			expect(mock.data('counter')).to.equal(undefined);
+			expect(mock.data()).to.deep.equal({});
+		});
 	});
 
 	describe('object', () => {

@@ -49,7 +49,10 @@ function wireFunction(mock, state) {
 	};
 	mock.calls = (call) => {
 		return call !== undefined ? state.calls[call] : state.calls;
-	}
+	};
+	mock.data = (key) => {
+		return key !== undefined ? state.data[key] : state.data;
+	};
 	mock.reset = () => {
 		state.rets = [];
 		state.retHandlers = [];
