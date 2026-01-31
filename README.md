@@ -461,6 +461,30 @@ expect(Logger.inst(1).info.calls(0)).to.deep.equal({
 expect(Logger.numInsts()).to.equal(2);
 ```
 
+**Accessing mock helpers on instances:**
+
+You can access `.calls()`, `.ret()`, and `.reset()` directly on instance methods:
+
+```javascript
+const Logger = mocky.class({
+  info: mocky.function().args('message')
+}).build();
+
+const logger = new Logger();
+logger.info('test message');
+
+// Access calls directly on the instance
+expect(logger.info.calls(0)).to.deep.equal({ message: 'test message' });
+
+// Configure returns on the instance
+logger.info.ret('logged');
+expect(logger.info('another')).to.equal('logged');
+
+// Reset via instance
+logger.info.reset();
+expect(logger.info.calls().length).to.equal(0);
+```
+
 **Pre-configuring instances:**
 
 ```javascript

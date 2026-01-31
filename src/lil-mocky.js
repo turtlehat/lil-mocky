@@ -242,24 +242,16 @@ function createClass(state, options) {
 		if (key === 'constructor')
 			continue;
 
-		const member = options.members[key];
-
-		if (member?.__mockyFunction) {
-			Mock.prototype[key] = function(...args) {
-				return state.descriptions[this.__mockyInst][key].apply(this, args);
-			};
-		} else {
-			Object.defineProperty(Mock.prototype, key, {
-				get: function() {
-					return state.descriptions[this.__mockyInst][key];
-				},
-				set: function(value) {
-					state.descriptions[this.__mockyInst][key] = value;
-				},
-				enumerable: true,
-				configurable: true
-			});
-		}
+		Object.defineProperty(Mock.prototype, key, {
+			get: function() {
+				return state.descriptions[this.__mockyInst][key];
+			},
+			set: function(value) {
+				state.descriptions[this.__mockyInst][key] = value;
+			},
+			enumerable: true,
+			configurable: true
+		});
 	}
 
 	return Mock;

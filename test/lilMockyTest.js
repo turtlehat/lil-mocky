@@ -111,6 +111,70 @@ describe('lil-mocky', () => {
 			mock(['c']);
 			expect(mock.data('allItems')).to.deep.equal(['a', 'b', 'c']);
 		});
+		it('will be async function', async () => {
+			const mock = mocky.function().args('x').async().build();
+			mock.ret('async-result');
+
+			const result = mock('test');
+
+			expect(result).to.be.a('promise');
+			expect(await result).to.equal('async-result');
+			expect(mock.calls(0)).to.deep.equal({ x: 'test' });
+		});
+		it('will return different values per call index', () => {
+			const mock = mocky.function().build();
+
+			mock.ret('default');
+			mock.ret('first', 1);
+			mock.ret('second', 2);
+
+			expect(mock()).to.equal('first');
+			expect(mock()).to.equal('second');
+			expect(mock()).to.equal('default');
+			expect(mock()).to.equal('default');
+		});
+		it('will use onRet handler for return value', () => {
+			const mock = mocky.function().args('x', 'y').build();
+
+			mock.onRet((args) => args.x + args.y);
+
+			expect(mock(2, 3)).to.equal(5);
+			expect(mock(10, 20)).to.equal(30);
+		});
+		it('will use onRet handler per call index', () => {
+			const mock = mocky.function().args('x').build();
+
+			mock.onRet((args) => args.x * 10);
+			mock.onRet((args) => args.x * 100, 1);
+
+			expect(mock(5)).to.equal(500);  // call 1 handler
+			expect(mock(5)).to.equal(50);   // default handler
+		});
+		it('will throw error when ret is an Error', () => {
+			const mock = mocky.function().build();
+
+			mock.ret(new Error('test error'));
+
+			expect(() => mock()).to.throw('test error');
+			expect(mock.calls().length).to.equal(1);
+		});
+		it('will provide rawArgs in context', () => {
+			const mock = mocky.function((context) => {
+				return context.rawArgs;
+			}).args('first').build();
+
+			const result = mock('a', 'b', 'c');
+
+			expect(result).to.deep.equal(['a', 'b', 'c']);
+		});
+		it('will provide original function in context', () => {
+			const original = (x) => x * 2;
+			const mock = mocky.function((context) => {
+				return context.original(context.args.x) + 100;
+			}).args('x').original(original).build();
+
+			expect(mock(5)).to.equal(110);  // (5 * 2) + 100
+		});
 	});
 
 	describe('object', () => {
@@ -672,6 +736,26 @@ describe('lil-mocky', () => {
 			expect(inst.db.query('SELECT *')).to.deep.equal({ rows: ['a', 'b'] });
 			expect(inst.db.close()).to.equal(true);
 			expect(Mock.inst(0).db.query.calls(0)).to.deep.equal({ sql: 'SELECT *' });
+		});
+
+		it('will access mock helpers directly on instance methods', () => {
+			const Mock = mocky.create(mocky.class({
+				run: mocky.function().args('arg')
+			}));
+
+			const inst = new Mock();
+
+			// Configure via instance
+			inst.run.ret('test-ret');
+			expect(inst.run('hello')).to.equal('test-ret');
+
+			// Access calls via instance
+			expect(inst.run.calls(0)).to.deep.equal({ arg: 'hello' });
+			expect(inst.run.calls().length).to.equal(1);
+
+			// Reset via instance
+			inst.run.reset();
+			expect(inst.run.calls().length).to.equal(0);
 		});
 	});
 
