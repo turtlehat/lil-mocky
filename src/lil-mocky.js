@@ -1,3 +1,5 @@
+const THROW_MARKER = Symbol('mockyThrow');
+
 function mockBuilder(builder) {
 	return builder.build();
 }
@@ -8,7 +10,8 @@ function functionBuilder(body) {
 		body: body,
 		args: [],
 		select: [],
-		original: undefined
+		original: undefined,
+		rets: []
 	};
 
 	return {
@@ -25,25 +28,40 @@ function functionBuilder(body) {
 			options.select = indexes;
 			return this;
 		},
+		pick: function(...indexes) {
+			options.select = indexes;
+			return this;
+		},
 		original: function(fn) {
 			options.original = fn;
 			return this;
 		},
+		static: function() {
+			this.__mockyStatic = true;
+			return this;
+		},
+		ret: function(value, call = 0) {
+			options.rets[call] = value;
+			return this;
+		},
 		build: function(parent, key) {
-			const state = {};
+			const state = { parent };
 			const mock = createFunction(state, options);
 
 			if (parent)
 				Object.defineProperty(parent, key, { value: mock });
 
-			return wireFunction(parent ? parent[key] : mock, state);
+			return wireFunction(parent ? parent[key] : mock, state, options);
 		}
 	};
 }
 
-function wireFunction(mock, state) {
+function wireFunction(mock, state, options = {}) {
 	mock.ret = (value, call = 0) => {
 		state.rets[call] = value;
+	};
+	mock.throw = (error, call = 0) => {
+		state.rets[call] = { [THROW_MARKER]: true, error };
 	};
 	mock.onRet = (handler, call = 0) => {
 		state.retHandlers[call] = handler;
@@ -55,7 +73,7 @@ function wireFunction(mock, state) {
 		return key !== undefined ? state.data[key] : state.data;
 	};
 	mock.reset = () => {
-		state.rets = [];
+		state.rets = options.rets ? [...options.rets] : [];
 		state.retHandlers = [];
 		state.calls = [];
 		state.data = {};
@@ -94,13 +112,17 @@ function getFunctionBody(parent, state, options, rawArgs) {
 		ret = state.retHandlers[0](args);
 	}
 
+	if (ret?.[THROW_MARKER])
+		throw ret.error;
+
 	if (ret instanceof Error)
 		throw ret;
 
 	if (options.body) {
 		return options.body({
-			self: parent,
+			self: state.parent || parent,
 			state: state,
+			data: state.data,
 			call: call,
 			args: args,
 			rawArgs: rawArgs,
@@ -238,9 +260,19 @@ function createClass(state, options) {
 		state.numInstances++;
 	};
 
+	state.statics = [];
+
 	for (const key of Reflect.ownKeys(options.members)) {
 		if (key === 'constructor')
 			continue;
+
+		const member = options.members[key];
+
+		if (member?.__mockyStatic) {
+			member.build(Mock, key);
+			state.statics.push(key);
+			continue;
+		}
 
 		Object.defineProperty(Mock.prototype, key, {
 			get: function() {
@@ -258,7 +290,7 @@ function createClass(state, options) {
 }
 
 function wireClass(Mock, state, options) {
-	Mock.inst = (index = 0) => {
+	Mock.instance = Mock.inst = (index = 0) => {
 		if (!state.descriptions[index])
 			state.descriptions[index] = createObjectWithProps(options.members);
 
@@ -271,6 +303,10 @@ function wireClass(Mock, state, options) {
 		state.descriptions = [];
 		state.numInstances = 0;
 		state.data = {};
+		for (const key of state.statics) {
+			if (typeof Mock[key]?.reset === 'function')
+				Mock[key].reset();
+		}
 	};
 	Mock.reset();
 
@@ -299,7 +335,13 @@ function deepClone(target) {
 	return target;
 }
 
-function createSpy(object, key, replacement) {
+function createSpy(object, key, replacement, argNames) {
+	if (typeof replacement === 'function' && !replacement.__mockyFunction) {
+		const body = replacement;
+		replacement = functionBuilder(body);
+		if (argNames) replacement = replacement.args(...argNames);
+	}
+
 	if (!replacement) {
 		replacement = functionBuilder((ctx) => {
 			if (ctx.ret !== undefined)
@@ -323,7 +365,10 @@ module.exports = {
 	spy: createSpy,
 	create: mockBuilder,
 	function: functionBuilder,
+	fn: functionBuilder,
 	object: objectBuilder,
+	obj: objectBuilder,
 	class: classBuilder,
+	cls: classBuilder,
 	property: propertyBuilder,
 };

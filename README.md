@@ -26,7 +26,7 @@ const mocky = require('lil-mocky');
 describe('User Service', () => {
   it('calls the callback with user data', () => {
     // Create a mock function
-    const callback = mocky.function().args('user').build();
+    const callback = mocky.fn().args('user').build();
 
     // Call it in your code
     callback({ name: 'Alice', age: 30 });
@@ -39,6 +39,15 @@ describe('User Service', () => {
   });
 });
 ```
+
+**Shorthand synonyms** are available for all builders:
+
+| Full name | Shorthand |
+|-----------|-----------|
+| `mocky.function()` | `mocky.fn()` |
+| `mocky.object()` | `mocky.obj()` |
+| `mocky.class()` | `mocky.cls()` |
+| `Mock.instance()` | `Mock.inst()` |
 
 ---
 
@@ -54,7 +63,7 @@ function processUsers(users, onComplete) {
 }
 
 // Create mock callback with named arguments
-const onComplete = mocky.function().args('result').build();
+const onComplete = mocky.fn().args('result').build();
 
 // Run the code under test
 processUsers([{ name: 'Alice' }], onComplete);
@@ -70,19 +79,23 @@ expect(onComplete.calls().length).to.equal(1);
 
 ```javascript
 // Mock with return value
-const mock = mocky.function().build();
+const mock = mocky.fn().build();
 mock.ret('success');
 const result = mock();
 expect(result).to.equal('success');
 
+// Set return value before build
+const mock = mocky.fn().ret('success').build();
+mock(); // Returns 'success'
+
 // Mock async functions
-const fetchData = mocky.function().args('url').async().build();
+const fetchData = mocky.fn().args('url').async().build();
 fetchData.ret({ data: [1, 2, 3] });
 const result = await fetchData('/api/data');
 expect(result.data).to.deep.equal([1, 2, 3]);
 
 // Arguments with defaults
-const logger = mocky.function().args('message', { level: 'info' }).build();
+const logger = mocky.fn().args('message', { level: 'info' }).build();
 logger('Test message');
 expect(logger.calls(0)).to.deep.equal({
   message: 'Test message',
@@ -95,7 +108,7 @@ expect(logger.calls(0)).to.deep.equal({
 Configure what the mock returns when called:
 
 ```javascript
-const mock = mocky.function().build();
+const mock = mocky.fn().build();
 
 // Simple return value
 mock.ret('hello');
@@ -118,6 +131,21 @@ mock(); // 'default'
 mock(); // 'default'
 ```
 
+**ret() on builder:** You can set return values before `.build()`:
+
+```javascript
+const mock = mocky.fn().ret('pre-configured').build();
+mock(); // Returns 'pre-configured'
+
+// Per-call values work too
+const mock = mocky.fn().ret('default').ret('first', 1).build();
+
+// Builder values are restored on reset
+mock.ret('override');
+mock.reset();
+mock(); // Returns 'pre-configured' again
+```
+
 **Important:** `.ret()` stores the value - it doesn't call functions:
 
 ```javascript
@@ -125,28 +153,40 @@ mock(); // 'default'
 mock.ret(() => compute());
 
 // ✅ RIGHT - use custom implementation for dynamic behavior
-const mock = mocky.function((context) => {
+const mock = mocky.fn((ctx) => {
   return compute();
 }).build();
 ```
 
-**Throwing errors:**
+#### .throw() - Throw Errors
+
+Explicit error throwing, parallel to `.ret()`:
 
 ```javascript
-mock.ret(new Error('Something went wrong'));
+const mock = mocky.fn().build();
+
+mock.throw(new Error('Something went wrong'));
 mock(); // Throws 'Something went wrong'
 
-// Different errors per call
-mock.ret(new Error('First error'), 1);
-mock.ret(new Error('Second error'), 2);
+// Non-Error values work too
+mock.throw('string error');
+
+// Per-call throwing
+mock.throw(new Error('first call only'), 1);
+mock.ret('default');
+
+mock(); // Throws 'first call only'
+mock(); // Returns 'default'
 ```
+
+Note: `mock.ret(new Error(...))` also throws (legacy behavior). Use `.throw()` for clarity.
 
 #### .calls() - Verify Arguments
 
 Check what arguments were passed to the mock:
 
 ```javascript
-const mock = mocky.function().args('name', 'age').build();
+const mock = mocky.fn().args('name', 'age').build();
 
 mock('Alice', 30);
 mock('Bob', 25);
@@ -160,7 +200,7 @@ mock.calls(); // [{ name: 'Alice', age: 30 }, { name: 'Bob', age: 25 }]
 mock.calls().length; // 2
 
 // Without .args() config, returns raw arguments array
-const rawMock = mocky.function().build();
+const rawMock = mocky.fn().build();
 rawMock('a', 'b', 'c');
 rawMock.calls(0); // ['a', 'b', 'c']
 ```
@@ -170,7 +210,7 @@ rawMock.calls(0); // ['a', 'b', 'c']
 Reset the mock back to its initial state:
 
 ```javascript
-const mock = mocky.function().build();
+const mock = mocky.fn().build();
 mock.ret('value');
 mock('test');
 
@@ -188,9 +228,9 @@ mock(); // Returns undefined (ret cleared)
 For dynamic behavior, pass a function that receives a `context` object:
 
 ```javascript
-const mock = mocky.function((context) => {
+const mock = mocky.fn((ctx) => {
   // Your custom logic here
-  return context.args.x * 2;
+  return ctx.args.x * 2;
 }).args('x').build();
 
 mock(5); // Returns 10
@@ -199,12 +239,15 @@ mock(5); // Returns 10
 **Context properties:**
 
 ```javascript
-const mock = mocky.function((context) => {
-  // context.args - Named arguments (from .args() config)
-  // context.ret - Value set via .ret()
-  // context.call - Call number (1-indexed)
-  // context.self - The 'this' context
-  // context.state - Internal state object (for storing custom data)
+const mock = mocky.fn((ctx) => {
+  ctx.self       // The mockable surface (mock object or class description)
+  ctx.args       // Named arguments (from .args() config)
+  ctx.rawArgs    // Raw arguments array (before .args() processing)
+  ctx.ret        // Value set via .ret()
+  ctx.call       // Call number (1-indexed)
+  ctx.data       // Custom state object (persists across calls, cleared on reset)
+  ctx.original   // Original function (available in spies)
+  ctx.state      // Internal state (prefer ctx.data instead)
 
   return someValue;
 }).args('param1', 'param2').build();
@@ -213,13 +256,13 @@ const mock = mocky.function((context) => {
 **Override pattern** - Allow `.ret()` to override default behavior:
 
 ```javascript
-const compute = mocky.function((context) => {
+const compute = mocky.fn((ctx) => {
   // Check if .ret() was called
-  if (context.ret !== undefined)
-    return context.ret;
+  if (ctx.ret !== undefined)
+    return ctx.ret;
 
   // Default logic
-  return context.args.x * context.args.y;
+  return ctx.args.x * ctx.args.y;
 }).args('x', 'y').build();
 
 compute(5, 3); // Returns 15 (default logic)
@@ -231,11 +274,11 @@ compute(5, 3); // Returns 999
 **Conditional behavior** - Different logic based on arguments:
 
 ```javascript
-const validator = mocky.function((context) => {
-  if (context.args.value === null)
+const validator = mocky.fn((ctx) => {
+  if (ctx.args.value === null)
     throw new Error('Value cannot be null');
 
-  if (context.args.value.length < 3)
+  if (ctx.args.value.length < 3)
     return { valid: false, error: 'Too short' };
 
   return { valid: true };
@@ -248,31 +291,27 @@ validator('abc'); // { valid: true }
 **Stateful mocks** - Track state across calls:
 
 ```javascript
-const counter = mocky.function((context) => {
-  // Use context.state to store data between calls
-  if (!context.state.count)
-    context.state.count = 0;
-
-  context.state.count++;
-  return context.state.count;
+const counter = mocky.fn((ctx) => {
+  ctx.data.count = (ctx.data.count || 0) + 1;
+  return ctx.data.count;
 }).build();
 
 counter(); // 1
 counter(); // 2
 counter(); // 3
 
-counter.reset(); // Clears context.state
+counter.reset(); // Clears ctx.data
 counter(); // 1
 ```
 
 **Call-specific behavior** - Different logic per call:
 
 ```javascript
-const fetcher = mocky.function((context) => {
-  if (context.call === 1)
+const fetcher = mocky.fn((ctx) => {
+  if (ctx.call === 1)
     return { status: 'loading' };
 
-  if (context.call === 2)
+  if (ctx.call === 2)
     return { status: 'success', data: [1, 2, 3] };
 
   return { status: 'cached' };
@@ -291,9 +330,9 @@ Mock objects for testing APIs, databases, and services:
 
 ```javascript
 // Mock an API client
-const api = mocky.object({
-  get: mocky.function().args('url'),
-  post: mocky.function().args('url', 'data'),
+const api = mocky.obj({
+  get: mocky.fn().args('url'),
+  post: mocky.fn().args('url', 'data'),
   baseURL: 'https://api.example.com',
   timeout: 5000
 }).build();
@@ -324,16 +363,16 @@ Once you call `.build()`, the mock object's structure is immutable. You cannot a
 
 ```javascript
 // ❌ WRONG - can't modify after .build()
-const mock = mocky.object({
-  method: mocky.function()
+const mock = mocky.obj({
+  method: mocky.fn()
 }).build();
 
 mock.method = newImplementation; // TypeError: Cannot assign to read only property
-mock.newMethod = mocky.function().build(); // TypeError: Cannot add property
+mock.newMethod = mocky.fn().build(); // TypeError: Cannot add property
 
 // ✅ RIGHT - define everything when building
-const mock = mocky.object({
-  method: mocky.function((context) => {
+const mock = mocky.obj({
+  method: mocky.fn((ctx) => {
     // Your custom implementation here
     return 'result';
   })
@@ -345,10 +384,10 @@ This immutability prevents bugs and ensures `.reset()` works correctly. To chang
 **Nested mocks for complex structures:**
 
 ```javascript
-const db = mocky.object({
-  users: mocky.object({
-    findById: mocky.function().args('id'),
-    create: mocky.function().args('userData')
+const db = mocky.obj({
+  users: mocky.obj({
+    findById: mocky.fn().args('id'),
+    create: mocky.fn().args('userData')
   }),
   connected: true
 }).build();
@@ -360,8 +399,8 @@ const user = await db.users.findById(1);
 **Symbol properties (advanced):**
 
 ```javascript
-const iterable = mocky.object({
-  [Symbol.iterator]: mocky.function()
+const iterable = mocky.obj({
+  [Symbol.iterator]: mocky.fn()
 }).build();
 
 iterable[Symbol.iterator].ret('iterator');
@@ -375,8 +414,8 @@ Calling `.reset()` on an object mock:
 - Deletes any properties added after creation
 
 ```javascript
-const api = mocky.object({
-  get: mocky.function(),
+const api = mocky.obj({
+  get: mocky.fn(),
   baseURL: 'https://api.example.com',
   timeout: 5000
 }).build();
@@ -405,10 +444,10 @@ Mock classes with per-instance behavior - perfect for services that get instanti
 
 ```javascript
 // Mock a Logger class that gets instantiated per module
-const Logger = mocky.class({
-  constructor: mocky.function().args('moduleName'),
-  info: mocky.function().args('message'),
-  error: mocky.function().args('message'),
+const Logger = mocky.cls({
+  constructor: mocky.fn().args('moduleName'),
+  info: mocky.fn().args('message'),
+  error: mocky.fn().args('message'),
   level: 'info'
 }).build();
 
@@ -466,8 +505,8 @@ expect(Logger.numInsts()).to.equal(2);
 You can access `.calls()`, `.ret()`, and `.reset()` directly on instance methods:
 
 ```javascript
-const Logger = mocky.class({
-  info: mocky.function().args('message')
+const Logger = mocky.cls({
+  info: mocky.fn().args('message')
 }).build();
 
 const logger = new Logger();
@@ -489,12 +528,12 @@ expect(logger.info.calls().length).to.equal(0);
 
 ```javascript
 // Configure behavior BEFORE instances are created
-const Database = mocky.class({
-  constructor: mocky.function().args('connectionString'),
-  query: mocky.function().args('sql'),
-  pool: mocky.object({
-    acquire: mocky.function(),
-    release: mocky.function()
+const Database = mocky.cls({
+  constructor: mocky.fn().args('connectionString'),
+  query: mocky.fn().args('sql'),
+  pool: mocky.obj({
+    acquire: mocky.fn(),
+    release: mocky.fn()
   })
 }).build();
 
@@ -510,26 +549,26 @@ const users = await db1.query('SELECT * FROM users'); // [{ id: 1, ... }]
 const empty = await db2.query('SELECT * FROM users'); // []
 ```
 
-#### Using context.self for Instance State
+#### Using ctx.self for Instance State
 
-Use `context.self` to access and modify instance properties:
+`ctx.self` is the "mockable surface" — the object that holds the mock's state. For class mocks, this is the description object (what `Mock.inst(n)` returns), not the raw class instance. Properties you want to access via `ctx.self` should be defined as members:
 
 ```javascript
-// Mock a class where methods need to access instance properties
-const Counter = mocky.class({
-  constructor: mocky.function((context) => {
-    // Store initial value on the instance
-    context.self._count = context.args.initial || 0;
+const Counter = mocky.cls({
+  _count: 0,
+  _initialized: false,
+  constructor: mocky.fn((ctx) => {
+    ctx.self._count = ctx.args.initial || 0;
+    ctx.self._initialized = true;
   }).args('initial'),
 
-  increment: mocky.function((context) => {
-    // Access instance state via context.self
-    context.self._count++;
-    return context.self._count;
+  increment: mocky.fn((ctx) => {
+    ctx.self._count++;
+    return ctx.self._count;
   }),
 
-  getCount: mocky.function((context) => {
-    return context.self._count;
+  getCount: mocky.fn((ctx) => {
+    return ctx.self._count;
   })
 }).build();
 
@@ -544,16 +583,39 @@ counter2.increment(); // 101
 counter.getCount();   // Still 12
 ```
 
+#### Static Methods
+
+Mark methods as static with `.static()` — they live on the class itself, not on instances:
+
+```javascript
+const WebSocket = mocky.cls({
+  CONNECTING: mocky.fn().ret(0).static(),
+  OPEN: mocky.fn().ret(1).static(),
+  send: mocky.fn().args('data'),
+}).build();
+
+WebSocket.CONNECTING(); // 0
+WebSocket.OPEN();       // 1
+
+const ws = new WebSocket();
+ws.send('hello');
+ws.staticMethod; // undefined — not on instances
+
+// Static methods are reset with the class
+WebSocket.reset();
+```
+
 #### Class .reset() Behavior
 
 Calling `.reset()` on a class mock:
 - Clears all instance configurations
 - Resets instance counter to 0
+- Resets all static methods
 - Next instantiation starts fresh at instance 0
 
 ```javascript
-const Mock = mocky.class({
-  method: mocky.function()
+const Mock = mocky.cls({
+  method: mocky.fn()
 }).build();
 
 Mock.inst(0).method.ret('value');
@@ -624,32 +686,31 @@ spy.restore();
 
 **Spy with custom replacement:**
 
-When using a custom replacement, context includes additional properties for working with the original function:
+Pass a plain function and optional argument names directly:
 
 ```javascript
-const analytics = {
-  track: (event, data) => {
-    // Real implementation posts to analytics server
-    fetch('/analytics', { method: 'POST', body: JSON.stringify({ event, data }) });
-  }
+const obj = {
+  add: (a, b) => a + b
 };
 
-const spy = mocky.spy(analytics, 'track', mocky.function((context) => {
-  // context.original - The original function
-  // context.rawArgs - Unprocessed arguments array
+// Plain function + args array (no need to wrap in mocky.fn())
+const spy = mocky.spy(obj, 'add', (ctx) => {
+  return ctx.original.apply(ctx.self, ctx.rawArgs) * 10;
+}, ['x', 'y']);
 
-  // Call original but also add test logging
-  console.log('Analytics called:', context.rawArgs);
-  context.original.apply(context.self, context.rawArgs);
-}).args('event', 'data'));
-
-analytics.track('page_view', { page: '/home' });
-expect(spy.calls(0)).to.deep.equal({
-  event: 'page_view',
-  data: { page: '/home' }
-});
+obj.add(3, 4); // 70 — (3 + 4) * 10
+spy.calls(0);  // { x: 3, y: 4 }
 
 spy.restore();
+```
+
+You can also use a full builder for more control:
+
+```javascript
+const spy = mocky.spy(analytics, 'track', mocky.fn((ctx) => {
+  console.log('Analytics called:', ctx.rawArgs);
+  ctx.original.apply(ctx.self, ctx.rawArgs);
+}).args('event', 'data'));
 ```
 
 **Spy on class prototypes (affects all instances):**
@@ -682,7 +743,7 @@ Migration guide for Jest users:
 
 | Jest | lil-mocky |
 |------|-----------|
-| `jest.fn()` | `mocky.function().build()` |
+| `jest.fn()` | `mocky.fn().build()` |
 | `mock.mockReturnValue(val)` | `mock.ret(val)` |
 | `mock.mock.calls[0][0]` | `mock.calls(0)` |
 | `jest.spyOn(obj, 'method')` | `mocky.spy(obj, 'method')` |

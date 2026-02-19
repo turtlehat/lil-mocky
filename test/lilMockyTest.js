@@ -403,10 +403,11 @@ describe('lil-mocky', () => {
 			expect(counter.getConstructorData()).to.equal(undefined);
 		});
 
-		it('will store data on instance via context.self in constructor', async () => {
+		it('will store data on description via context.self in constructor', async () => {
 			const Counter = mocky.create(mocky.class({
+				_count: 0,
+				_initialized: false,
 				constructor: mocky.function((context) => {
-					// Store data directly on the instance
 					context.self._count = context.args.startValue || 0;
 					context.self._initialized = true;
 				}).args('startValue'),
@@ -601,6 +602,8 @@ describe('lil-mocky', () => {
 
 		it('will support class inheritance with super calls', () => {
 			const Mock = mocky.create(mocky.class({
+				mockInitialized: false,
+				mockValue: null,
 				constructor: mocky.function((context) => {
 					context.self.mockInitialized = true;
 					context.self.mockValue = context.args.value;
@@ -641,6 +644,7 @@ describe('lil-mocky', () => {
 
 		it('will not expose __mockyInst in deep equal comparisons', () => {
 			const Mock = mocky.create(mocky.class({
+				name: null,
 				constructor: mocky.function((context) => {
 					context.self.name = context.args.name;
 				}).args('name')
@@ -759,6 +763,237 @@ describe('lil-mocky', () => {
 		});
 	});
 
+	describe('static', () => {
+		it('will support static methods on class mocks', () => {
+			const Mock = mocky.cls({
+				staticMethod: mocky.fn().args('x').static(),
+				instanceMethod: mocky.fn().args('y'),
+			}).build();
+
+			Mock.staticMethod('test');
+			expect(Mock.staticMethod.calls(0)).to.deep.equal({ x: 'test' });
+		});
+		it('will not expose static methods on instances', () => {
+			const Mock = mocky.cls({
+				staticMethod: mocky.fn().static(),
+				instanceMethod: mocky.fn(),
+			}).build();
+
+			const inst = new Mock();
+			expect(inst.staticMethod).to.equal(undefined);
+			expect(typeof inst.instanceMethod).to.equal('function');
+		});
+		it('will reset static methods on class reset', () => {
+			const Mock = mocky.cls({
+				staticMethod: mocky.fn().args('x').static(),
+			}).build();
+
+			Mock.staticMethod.ret('value');
+			Mock.staticMethod('test');
+			expect(Mock.staticMethod.calls().length).to.equal(1);
+
+			Mock.reset();
+			expect(Mock.staticMethod.calls().length).to.equal(0);
+			expect(Mock.staticMethod('test')).to.equal(undefined);
+		});
+		it('will support ret and throw on static methods', () => {
+			const Mock = mocky.cls({
+				getValue: mocky.fn().static(),
+				getError: mocky.fn().static(),
+			}).build();
+
+			Mock.getValue.ret('static-value');
+			expect(Mock.getValue()).to.equal('static-value');
+
+			Mock.getError.throw(new Error('static-error'));
+			expect(() => Mock.getError()).to.throw('static-error');
+		});
+	});
+
+	describe('ctx.self', () => {
+		it('will provide mock object as ctx.self for object mocks', () => {
+			const mock = mocky.obj({
+				setHandler: mocky.fn((ctx) => {
+					ctx.self.handler = ctx.args.fn;
+				}).args('fn'),
+			}).build();
+
+			const handler = () => 'handled';
+			mock.setHandler(handler);
+
+			expect(mock.handler).to.equal(handler);
+		});
+		it('will provide description as ctx.self for class mocks', () => {
+			const Mock = mocky.cls({
+				setHandler: mocky.fn((ctx) => {
+					ctx.self.handler = ctx.args.fn;
+				}).args('fn'),
+			}).build();
+
+			const inst = new Mock();
+			const handler = () => 'handled';
+			inst.setHandler(handler);
+
+			// handler should be on the description, accessible via inst()
+			expect(Mock.inst(0).handler).to.equal(handler);
+		});
+		it('will clean up ctx.self properties on object reset', () => {
+			const mock = mocky.obj({
+				setHandler: mocky.fn((ctx) => {
+					ctx.self.handler = ctx.args.fn;
+				}).args('fn'),
+			}).build();
+
+			mock.setHandler(() => 'handled');
+			expect(mock.handler).to.be.a('function');
+
+			mock.reset();
+			expect(mock.handler).to.equal(undefined);
+		});
+		it('will clean up ctx.self properties on class reset', () => {
+			const Mock = mocky.cls({
+				setHandler: mocky.fn((ctx) => {
+					ctx.self.handler = ctx.args.fn;
+				}).args('fn'),
+			}).build();
+
+			const inst = new Mock();
+			inst.setHandler(() => 'handled');
+			expect(Mock.inst(0).handler).to.be.a('function');
+
+			Mock.reset();
+			// descriptions cleared entirely
+			expect(Mock.inst(0).handler).to.equal(undefined);
+		});
+	});
+
+	describe('ctx.data', () => {
+		it('will provide ctx.data as direct access to state data', () => {
+			const mock = mocky.fn((ctx) => {
+				ctx.data.count = (ctx.data.count || 0) + 1;
+				return ctx.data.count;
+			}).build();
+
+			expect(mock()).to.equal(1);
+			expect(mock()).to.equal(2);
+			expect(mock.data('count')).to.equal(2);
+		});
+		it('will clear ctx.data on reset', () => {
+			const mock = mocky.fn((ctx) => {
+				ctx.data.value = 'set';
+			}).build();
+
+			mock();
+			expect(mock.data('value')).to.equal('set');
+
+			mock.reset();
+			mock();
+			expect(mock.data('value')).to.equal('set');
+			expect(mock.data()).to.deep.equal({ value: 'set' });
+		});
+	});
+
+	describe('ret on builder', () => {
+		it('will set return value on builder before build()', () => {
+			const mock = mocky.fn().ret('pre-configured').build();
+			expect(mock()).to.equal('pre-configured');
+		});
+		it('will set per-call return value on builder', () => {
+			const mock = mocky.fn().ret('default').ret('first', 1).build();
+			expect(mock()).to.equal('first');
+			expect(mock()).to.equal('default');
+		});
+		it('will allow ret() override after build()', () => {
+			const mock = mocky.fn().ret('builder-value').build();
+			mock.ret('override');
+			expect(mock()).to.equal('override');
+		});
+		it('will restore builder ret values on reset', () => {
+			const mock = mocky.fn().ret('builder-value').build();
+			mock.ret('override');
+			mock.reset();
+			expect(mock()).to.equal('builder-value');
+		});
+	});
+
+	describe('throw', () => {
+		it('will throw an Error via mock.throw()', () => {
+			const mock = mocky.function().build();
+			mock.throw(new Error('thrown'));
+
+			expect(() => mock()).to.throw('thrown');
+			expect(mock.calls().length).to.equal(1);
+		});
+		it('will throw a non-Error value via mock.throw()', () => {
+			const mock = mocky.function().build();
+			mock.throw('string error');
+
+			expect(() => mock()).to.throw('string error');
+		});
+		it('will throw on specific call index', () => {
+			const mock = mocky.function().build();
+			mock.ret('default');
+			mock.throw(new Error('first call'), 1);
+
+			expect(() => mock()).to.throw('first call');
+			expect(mock()).to.equal('default');
+		});
+		it('will clear throw on reset', () => {
+			const mock = mocky.function().build();
+			mock.throw(new Error('thrown'));
+
+			expect(() => mock()).to.throw('thrown');
+
+			mock.reset();
+			expect(mock()).to.equal(undefined);
+		});
+	});
+
+	describe('synonyms', () => {
+		it('will use mocky.fn() as synonym for mocky.function()', () => {
+			const mock = mocky.fn().args('x').build();
+			mock.ret('result');
+
+			expect(mock(1)).to.equal('result');
+			expect(mock.calls(0)).to.deep.equal({ x: 1 });
+		});
+		it('will use mocky.obj() as synonym for mocky.object()', () => {
+			const mock = mocky.obj({
+				run: mocky.fn().args('arg')
+			}).build();
+
+			mock.run.ret('test');
+			expect(mock.run('hello')).to.equal('test');
+			expect(mock.run.calls(0)).to.deep.equal({ arg: 'hello' });
+		});
+		it('will use mocky.cls() as synonym for mocky.class()', () => {
+			const Mock = mocky.cls({
+				method: mocky.fn().args('x')
+			}).build();
+
+			Mock.inst().method.ret('value');
+			const inst = new Mock();
+			expect(inst.method('test')).to.equal('value');
+		});
+		it('will use Mock.instance() as synonym for Mock.inst()', () => {
+			const Mock = mocky.class({
+				method: mocky.function().args('x')
+			}).build();
+
+			Mock.instance().method.ret('value');
+			const inst = new Mock();
+			expect(inst.method('test')).to.equal('value');
+			expect(Mock.instance(0).method.calls(0)).to.deep.equal({ x: 'test' });
+		});
+		it('will use .pick() as synonym for .argSelect()', () => {
+			const mock = mocky.function().pick(1).build();
+			mock.ret('result');
+
+			mock('first', { test: 'data' }, 'third');
+			expect(mock.calls(0)).to.deep.equal({ test: 'data' });
+		});
+	});
+
 	describe('spy', () => {
 		it('will spy on method, call through, track calls and preserve this', () => {
 			const obj = {
@@ -843,6 +1078,38 @@ describe('lil-mocky', () => {
 			spy.restore();
 		});
 
+		it('will spy with plain function replacement and args', () => {
+			const obj = {
+				add: function(a, b) {
+					return a + b;
+				}
+			};
+
+			const spy = mocky.spy(obj, 'add', (ctx) => {
+				return ctx.original.apply(ctx.self, ctx.rawArgs) * 10;
+			}, ['x', 'y']);
+
+			const result = obj.add(3, 4);
+
+			expect(result).to.equal(70);
+			expect(spy.calls(0)).to.deep.equal({ x: 3, y: 4 });
+
+			spy.restore();
+		});
+		it('will spy with plain function replacement without args', () => {
+			const obj = {
+				getValue: function() { return 42; }
+			};
+
+			const spy = mocky.spy(obj, 'getValue', (ctx) => {
+				return ctx.original.apply(ctx.self, ctx.rawArgs) + 1;
+			});
+
+			expect(obj.getValue()).to.equal(43);
+			expect(spy.calls().length).to.equal(1);
+
+			spy.restore();
+		});
 		it('will spy with replacement function and provide context.original', () => {
 			const obj = {
 				add: function(a, b) {
