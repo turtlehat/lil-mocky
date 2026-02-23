@@ -482,21 +482,21 @@ describe('lil-mocky', () => {
 			expect(counter1.getCount()).to.equal(12);
 		});
 
-		it('will track number of instances created with insts.length', async () => {
+		it('will track number of instances created with instCount', async () => {
 			const Mock = mocky.create(mocky.class({
 				constructor: mocky.function().args('value')
 			}));
 
-			expect(Mock.insts.length).to.equal(0);
+			expect(Mock.instCount).to.equal(0);
 
 			const inst1 = new Mock('first');
-			expect(Mock.insts.length).to.equal(1);
+			expect(Mock.instCount).to.equal(1);
 
 			const inst2 = new Mock('second');
-			expect(Mock.insts.length).to.equal(2);
+			expect(Mock.instCount).to.equal(2);
 
 			const inst3 = new Mock('third');
-			expect(Mock.insts.length).to.equal(3);
+			expect(Mock.instCount).to.equal(3);
 		});
 
 		it('will reset all instances and counters', async () => {
@@ -513,17 +513,17 @@ describe('lil-mocky', () => {
 
 			expect(inst1.run('test')).to.equal('first-ret');
 			expect(inst2.run('test')).to.equal('second-ret');
-			expect(Mock.insts.length).to.equal(2);
+			expect(Mock.instCount).to.equal(2);
 			expect(Mock.inst(0).run.calls.length).to.equal(1);
 
 			// Reset should clear everything
 			Mock.reset();
 
-			expect(Mock.insts.length).to.equal(0);
+			expect(Mock.instCount).to.equal(0);
 
 			// After reset, new instances start from index 0 again
 			const inst3 = new Mock('third');
-			expect(Mock.insts.length).to.equal(1);
+			expect(Mock.instCount).to.equal(1);
 			// Returns should be cleared
 			expect(inst3.run('test')).to.equal(undefined);
 			// Calls should be cleared
@@ -545,14 +545,14 @@ describe('lil-mocky', () => {
 			inst2.name = 'second';
 			inst2.count = 20;
 
-			expect(Mock.insts.length).to.equal(2);
+			expect(Mock.instCount).to.equal(2);
 			expect(Mock.inst(0).name).to.equal('first');
 			expect(Mock.inst(1).count).to.equal(20);
 
 			// Reset
 			Mock.reset();
 
-			expect(Mock.insts.length).to.equal(0);
+			expect(Mock.instCount).to.equal(0);
 
 			// After reset, descriptions are fresh with initial values
 			expect(Mock.inst(0).name).to.equal(null);
@@ -1018,14 +1018,14 @@ describe('lil-mocky', () => {
 			expect(inst.method('test')).to.equal('value');
 			expect(Mock.instance(0).method.calls[0]).to.deep.equal({ x: 'test' });
 		});
-		it('will use Mock.instances as synonym for Mock.insts', () => {
+		it('will use Mock.instanceCount as synonym for Mock.instCount', () => {
 			const Mock = mocky.class({
 				method: mocky.function()
 			}).build();
 
 			const inst = new Mock();
-			expect(Mock.instances.length).to.equal(1);
-			expect(Mock.instances).to.equal(Mock.insts);
+			expect(Mock.instanceCount).to.equal(1);
+			expect(Mock.instanceCount).to.equal(Mock.instCount);
 		});
 		it('will use .pick() to select specific arguments', () => {
 			const mock = mocky.function().pick(1).build();

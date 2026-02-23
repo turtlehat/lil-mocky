@@ -490,7 +490,7 @@ expect(Logger.inst(1).info.calls[0]).to.deep.equal({
   message: 'User logging in'
 });
 
-expect(Logger.insts.length).to.equal(2);
+expect(Logger.instCount).to.equal(2);
 ```
 
 **Accessing mock helpers on instances:**
@@ -544,7 +544,14 @@ const empty = await db2.query('SELECT * FROM users'); // []
 
 #### Instance Access
 
-Access all instances via the `insts` (or `instances`) getter:
+Use `Mock.inst(n)` to access or pre-configure a specific instance (lazy-creates the description if needed):
+
+```javascript
+Mock.inst(0);  // First instance
+Mock.inst(1);  // Second instance
+```
+
+Use `instCount` (or `instanceCount`) to get the number of instantiated instances:
 
 ```javascript
 const Mock = mocky.cls({
@@ -554,15 +561,8 @@ const Mock = mocky.cls({
 const inst1 = new Mock();
 const inst2 = new Mock();
 
-Mock.insts.length;    // 2
-Mock.instances.length; // 2 (synonym)
-```
-
-Use `Mock.inst(n)` to access or pre-configure a specific instance (lazy-creates if needed):
-
-```javascript
-Mock.inst(0);  // First instance
-Mock.inst(1);  // Second instance
+Mock.instCount;      // 2
+Mock.instanceCount;  // 2 (synonym)
 ```
 
 #### Using ctx.self for Instance State
@@ -638,13 +638,13 @@ Mock.inst(0).method.ret('value');
 const instance1 = new Mock();
 const instance2 = new Mock();
 
-Mock.insts.length; // 2
+Mock.instCount; // 2
 
 Mock.reset();
 
 // After reset:
 // - All instance configurations cleared
-// - Mock.insts.length is 0
+// - Mock.instCount is 0
 // - Next instantiation starts fresh at instance 0
 ```
 

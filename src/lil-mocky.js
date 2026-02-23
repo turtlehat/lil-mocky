@@ -290,8 +290,8 @@ function wireClass(Mock, state, options) {
 
 		return state.descriptions[index];
 	};
-	Object.defineProperty(Mock, 'insts', { get: () => state.descriptions, configurable: true });
-	Object.defineProperty(Mock, 'instances', { get: () => state.descriptions, configurable: true });
+	Object.defineProperty(Mock, 'instCount', { get: () => state.numInstances, configurable: true });
+	Object.defineProperty(Mock, 'instanceCount', { get: () => state.numInstances, configurable: true });
 	Mock.reset = () => {
 		state.descriptions = [];
 		state.numInstances = 0;

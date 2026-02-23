@@ -1,6 +1,6 @@
 {
     "name": "lil-mocky",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "main": "src/lil-mocky.js",
     "scripts": {
         "test": "mocha test/lilMockyTest.js"
