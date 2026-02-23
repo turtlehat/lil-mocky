@@ -9,18 +9,18 @@ describe('lil-mocky', () => {
 			mock.ret('result');
 
 			expect(mock(1, 2)).to.equal('result');
-			expect(mock.calls(0)).to.deep.equal({ x: 1, y: 2 });
+			expect(mock.calls[0]).to.deep.equal({ x: 1, y: 2 });
 		});
 		it('will be a function with args', async () => {
 			const mock = mocky.create(mocky.function().args('firstArg', { secondArg: 'testDefault' }));
 			mock.ret('testRet');
 
 			expect(mock('testArg')).to.equal('testRet');
-			expect(mock.calls(0)).to.deep.equal({
+			expect(mock.calls[0]).to.deep.equal({
 				firstArg: 'testArg',
 				secondArg: 'testDefault'
 			});
-			expect(mock.calls().length).to.equal(1);
+			expect(mock.calls.length).to.equal(1);
 		});
 		it('will be a function with custom return', async () => {
 			const mock = mocky.create(mocky.function((context) => {
@@ -29,29 +29,8 @@ describe('lil-mocky', () => {
 			mock.ret('testRet');
 
 			expect(mock('testArg')).to.equal('testRet');
-			expect(mock.calls(0)).to.deep.equal({ firstArg: 'testArg' });
-			expect(mock.calls().length).to.equal(1);
-		});
-		it('will use argSelect with single index to return raw argument', async () => {
-			const mock = mocky.create(mocky.function().argSelect(1));
-			mock.ret('testRet');
-
-			const result = mock('first', { test: 'data' }, 'third');
-
-			expect(result).to.equal('testRet');
-			// When argSelect has single index, calls returns the raw argument
-			expect(mock.calls(0)).to.deep.equal({ test: 'data' });
-		});
-		it('will use argSelect with multiple indexes to filter named args', async () => {
-			const mock = mocky.create(mocky.function().args('first', 'second', 'third').argSelect(0, 2));
-
-			mock('value1', 'value2', 'value3');
-
-			// Only first and third are captured
-			expect(mock.calls(0)).to.deep.equal({
-				first: 'value1',
-				third: 'value3'
-			});
+			expect(mock.calls[0]).to.deep.equal({ firstArg: 'testArg' });
+			expect(mock.calls.length).to.equal(1);
 		});
 		it('will deep clone arguments to prevent mutation', async () => {
 			const mock = mocky.create(mocky.function().args('data'));
@@ -63,11 +42,11 @@ describe('lil-mocky', () => {
 			obj.nested.value = 'mutated';
 
 			// Stored call should be unchanged
-			expect(mock.calls(0).data.nested.value).to.equal('original');
+			expect(mock.calls[0].data.nested.value).to.equal('original');
 		});
 		it('will reset function state including calls, returns and data', async () => {
 			const mock = mocky.create(mocky.function((context) => {
-				context.state.data.counter = (context.state.data.counter || 0) + 1;
+				context.data.counter = (context.data.counter || 0) + 1;
 				return context.ret;
 			}).args('arg'));
 			mock.ret('test-ret');
@@ -75,41 +54,39 @@ describe('lil-mocky', () => {
 			mock('call1');
 			mock('call2');
 
-			expect(mock.calls().length).to.equal(2);
-			expect(mock.data('counter')).to.equal(2);
+			expect(mock.calls.length).to.equal(2);
+			expect(mock.data.counter).to.equal(2);
 
 			mock.reset();
 
-			expect(mock.calls().length).to.equal(0);
+			expect(mock.calls.length).to.equal(0);
 			expect(mock('call3')).to.equal(undefined); // Return values cleared
-			expect(mock.data('counter')).to.equal(1); // Restarted from scratch
-			expect(mock.data()).to.deep.equal({ counter: 1 });
+			expect(mock.data.counter).to.equal(1); // Restarted from scratch
+			expect(mock.data).to.deep.equal({ counter: 1 });
 		});
-		it('will provide context with call, args, ret, state and data', async () => {
+		it('will provide context with call, args, ret and data', async () => {
 			const mock = mocky.create(mocky.function((context) => {
-				context.state.data.allItems = context.state.data.allItems || [];
-				context.state.data.allItems.push(...context.args.items);
+				context.data.allItems = context.data.allItems || [];
+				context.data.allItems.push(...context.args.items);
 				return {
 					call: context.call,
 					args: context.args,
 					ret: context.ret,
-					hasState: typeof context.state === 'object',
-					hasData: typeof context.state.data === 'object'
+					hasData: typeof context.data === 'object'
 				};
 			}).args('items'));
 			mock.ret('custom-ret');
 
 			const result = mock(['a', 'b']);
 
-			expect(result.call).to.equal(1);
+			expect(result.call).to.equal(0);
 			expect(result.args).to.deep.equal({ items: ['a', 'b'] });
 			expect(result.ret).to.equal('custom-ret');
-			expect(result.hasState).to.equal(true);
 			expect(result.hasData).to.equal(true);
 
 			// Data accumulates across calls
 			mock(['c']);
-			expect(mock.data('allItems')).to.deep.equal(['a', 'b', 'c']);
+			expect(mock.data.allItems).to.deep.equal(['a', 'b', 'c']);
 		});
 		it('will be async function', async () => {
 			const mock = mocky.function().args('x').async().build();
@@ -119,44 +96,27 @@ describe('lil-mocky', () => {
 
 			expect(result).to.be.a('promise');
 			expect(await result).to.equal('async-result');
-			expect(mock.calls(0)).to.deep.equal({ x: 'test' });
+			expect(mock.calls[0]).to.deep.equal({ x: 'test' });
 		});
 		it('will return different values per call index', () => {
 			const mock = mocky.function().build();
 
 			mock.ret('default');
-			mock.ret('first', 1);
-			mock.ret('second', 2);
+			mock.ret('first', 0);
+			mock.ret('second', 1);
 
 			expect(mock()).to.equal('first');
 			expect(mock()).to.equal('second');
 			expect(mock()).to.equal('default');
 			expect(mock()).to.equal('default');
 		});
-		it('will use onRet handler for return value', () => {
-			const mock = mocky.function().args('x', 'y').build();
-
-			mock.onRet((args) => args.x + args.y);
-
-			expect(mock(2, 3)).to.equal(5);
-			expect(mock(10, 20)).to.equal(30);
-		});
-		it('will use onRet handler per call index', () => {
-			const mock = mocky.function().args('x').build();
-
-			mock.onRet((args) => args.x * 10);
-			mock.onRet((args) => args.x * 100, 1);
-
-			expect(mock(5)).to.equal(500);  // call 1 handler
-			expect(mock(5)).to.equal(50);   // default handler
-		});
-		it('will throw error when ret is an Error', () => {
+		it('will return Error objects from ret without auto-throwing', () => {
 			const mock = mocky.function().build();
+			const error = new Error('test error');
+			mock.ret(error);
 
-			mock.ret(new Error('test error'));
-
-			expect(() => mock()).to.throw('test error');
-			expect(mock.calls().length).to.equal(1);
+			expect(mock()).to.equal(error);
+			expect(mock.calls.length).to.equal(1);
 		});
 		it('will provide rawArgs in context', () => {
 			const mock = mocky.function((context) => {
@@ -175,6 +135,106 @@ describe('lil-mocky', () => {
 
 			expect(mock(5)).to.equal(110);  // (5 * 2) + 100
 		});
+		it('will use pick with multiple indexes to filter named args', () => {
+			const mock = mocky.function().args('a', 'b', 'c').pick(0, 2).build();
+
+			mock('x', 'y', 'z');
+
+			expect(mock.calls[0]).to.deep.equal({ a: 'x', c: 'z' });
+		});
+		it('will use default value when undefined is passed explicitly', () => {
+			const mock = mocky.function().args('x', { y: 'fallback' }).build();
+
+			mock('hello', undefined);
+
+			expect(mock.calls[0]).to.deep.equal({ x: 'hello', y: 'fallback' });
+		});
+		it('will return raw args array when no args config is set', () => {
+			const mock = mocky.function().build();
+
+			mock('a', 'b', 'c');
+
+			expect(mock.calls[0]).to.deep.equal(['a', 'b', 'c']);
+		});
+		it('will provide this context as ctx.self for standalone function', () => {
+			const mock = mocky.function((ctx) => {
+				return ctx.self;
+			}).build();
+
+			const obj = { method: mock };
+			expect(obj.method()).to.equal(obj);
+		});
+		it('will increment ctx.call across calls starting at 0', () => {
+			const calls = [];
+			const mock = mocky.function((ctx) => {
+				calls.push(ctx.call);
+			}).build();
+
+			mock();
+			mock();
+			mock();
+
+			expect(calls).to.deep.equal([0, 1, 2]);
+		});
+		it('will deep clone nested arrays and arrays within objects', () => {
+			const mock = mocky.function().args('data').build();
+
+			const input = { list: [1, [2, 3]], tags: ['a'] };
+			mock(input);
+
+			input.list[1].push(4);
+			input.tags.push('b');
+
+			expect(mock.calls[0].data.list).to.deep.equal([1, [2, 3]]);
+			expect(mock.calls[0].data.tags).to.deep.equal(['a']);
+		});
+		it('will deep clone only own properties, not inherited ones', () => {
+			const mock = mocky.function().args('data').build();
+
+			const proto = { inherited: 'should not appear' };
+			const input = Object.create(proto);
+			input.own = 'value';
+			mock(input);
+
+			// Clone should have own property but not inherited one
+			expect(mock.calls[0].data.own).to.equal('value');
+			expect(mock.calls[0].data).to.not.have.own.property('inherited');
+		});
+		it('will deep clone symbol-keyed properties on plain objects', () => {
+			const mock = mocky.function().args('data').build();
+			const sym = Symbol('test');
+
+			const input = { normal: 1, [sym]: 'symbol-value' };
+			mock(input);
+
+			input[sym] = 'mutated';
+
+			expect(mock.calls[0].data[sym]).to.equal('symbol-value');
+			expect(mock.calls[0].data.normal).to.equal(1);
+		});
+		it('will pass non-plain objects through deepClone by reference', () => {
+			const mock = mocky.function().args('d').build();
+
+			const date = new Date('2025-01-01');
+			mock(date);
+
+			expect(mock.calls[0].d).to.equal(date);
+		});
+		it('will correctly return falsy values (0, false, empty string, null)', () => {
+			const mock = mocky.function().build();
+
+			mock.ret(0);
+			expect(mock()).to.equal(0);
+
+			mock.ret(false);
+			expect(mock()).to.equal(false);
+
+			mock.ret('');
+			expect(mock()).to.equal('');
+
+			mock.ret(null);
+			expect(mock()).to.equal(null);
+		});
 	});
 
 	describe('object', () => {
@@ -185,8 +245,8 @@ describe('lil-mocky', () => {
 
 			mock.run.ret('testRet');
 			expect(mock.run('testArg')).to.equal('testRet');
-			expect(mock.run.calls(0)).to.deep.equal({ firstArg: 'testArg' });
-			expect(mock.run.calls().length).to.equal(1);
+			expect(mock.run.calls[0]).to.deep.equal({ firstArg: 'testArg' });
+			expect(mock.run.calls.length).to.equal(1);
 		});
 		it('will be object with nested object and function', async () => {
 			const mock = mocky.create(mocky.object({
@@ -197,8 +257,8 @@ describe('lil-mocky', () => {
 			mock.sub.run.ret('testRet');
 
 			expect(mock.sub.run('testArg')).to.equal('testRet');
-			expect(mock.sub.run.calls(0)).to.deep.equal({ firstArg: 'testArg' });
-			expect(mock.sub.run.calls().length).to.equal(1);
+			expect(mock.sub.run.calls[0]).to.deep.equal({ firstArg: 'testArg' });
+			expect(mock.sub.run.calls.length).to.equal(1);
 		});
 		it('will reset all nested mocks when object is reset', async () => {
 			const mock = mocky.create(mocky.object({
@@ -214,39 +274,23 @@ describe('lil-mocky', () => {
 			mock.method1('call1');
 			mock.nested.method2('call2');
 
-			expect(mock.method1.calls().length).to.equal(1);
-			expect(mock.nested.method2.calls().length).to.equal(1);
+			expect(mock.method1.calls.length).to.equal(1);
+			expect(mock.nested.method2.calls.length).to.equal(1);
 
 			// Reset should propagate to all nested mocks
 			mock.reset();
 
-			expect(mock.method1.calls().length).to.equal(0);
-			expect(mock.nested.method2.calls().length).to.equal(0);
+			expect(mock.method1.calls.length).to.equal(0);
+			expect(mock.nested.method2.calls.length).to.equal(0);
 			expect(mock.method1('test')).to.equal(undefined);
 			expect(mock.nested.method2('test')).to.equal(undefined);
-		});
-		it('will be object with property getter and setter', async () => {
-			const mock = mocky.create(mocky.object({
-				accessor: mocky.property()
-			}));
-
-			// Initial value should be undefined
-			expect(mock.accessor).to.equal(undefined);
-
-			// Set a value
-			mock.accessor = 'testValue';
-			expect(mock.accessor).to.equal('testValue');
-
-			// Change the value
-			mock.accessor = 'newValue';
-			expect(mock.accessor).to.equal('newValue');
 		});
 		it('will reset all property types to initial values', async () => {
 			const mock = mocky.create(mocky.object({
 				counter: 42,
 				name: 'Alice',
 				method: mocky.function(),
-				accessor: mocky.property()
+				accessor: undefined
 			}));
 
 			// Modify all properties
@@ -266,9 +310,9 @@ describe('lil-mocky', () => {
 			expect(mock.name).to.equal('Alice');
 
 			// Methods reset
-			expect(mock.method.calls().length).to.equal(0);
+			expect(mock.method.calls.length).to.equal(0);
 
-			// mocky.property() resets to undefined
+			// undefined resets to undefined
 			expect(mock.accessor).to.equal(undefined);
 
 			// Dynamic properties deleted
@@ -291,7 +335,7 @@ describe('lil-mocky', () => {
 			// Configure and use Symbol function
 			mock[Symbol.iterator].ret('iteratorResult');
 			expect(mock[Symbol.iterator]()).to.equal('iteratorResult');
-			expect(mock[Symbol.iterator].calls().length).to.equal(1);
+			expect(mock[Symbol.iterator].calls.length).to.equal(1);
 
 			// Modify Symbol value and add dynamic Symbol
 			mock[customSymbol] = 'modifiedValue';
@@ -301,7 +345,7 @@ describe('lil-mocky', () => {
 			mock.reset();
 
 			// Symbol function mock was reset
-			expect(mock[Symbol.iterator].calls().length).to.equal(0);
+			expect(mock[Symbol.iterator].calls.length).to.equal(0);
 			expect(mock[Symbol.iterator]()).to.equal(undefined);
 
 			// Symbol plain property was restored
@@ -355,12 +399,12 @@ describe('lil-mocky', () => {
 			Mock.inst().run.ret('testRet');
 
 			const mockInstance = new Mock('testOption');
-			expect(Mock.inst().constructor.calls(0)).to.deep.equal({ initArg: 'testOption' });
-			expect(Mock.inst().constructor.calls().length).to.equal(1);
+			expect(Mock.inst().constructor.calls[0]).to.deep.equal({ initArg: 'testOption' });
+			expect(Mock.inst().constructor.calls.length).to.equal(1);
 
 			expect(mockInstance.run('testArg')).to.equal('testRet');
-			expect(Mock.inst().run.calls(0)).to.deep.equal({ firstArg: 'testArg' });
-			expect(Mock.inst().run.calls().length).to.equal(1);
+			expect(Mock.inst().run.calls[0]).to.deep.equal({ firstArg: 'testArg' });
+			expect(Mock.inst().run.calls.length).to.equal(1);
 		});
 
 		it('will be class with constructor and builder methods', async () => {
@@ -378,28 +422,26 @@ describe('lil-mocky', () => {
 
 			const mockInstance = new Mock();
 			mockInstance.index('test-index').namespace('test-namespace').query({ test: 'query' });
-			expect(Mock.inst().index.calls(0)).to.deep.equal({ index: 'test-index' });
-			expect(Mock.inst().index.calls().length).to.equal(1);
-			expect(Mock.inst().namespace.calls(0)).to.deep.equal({ namespace: 'test-namespace' });
-			expect(Mock.inst().namespace.calls().length).to.equal(1);
-			expect(Mock.inst().query.calls(0)).to.deep.equal({ query: { test: 'query' } });
-			expect(Mock.inst().query.calls().length).to.equal(1);
+			expect(Mock.inst().index.calls[0]).to.deep.equal({ index: 'test-index' });
+			expect(Mock.inst().index.calls.length).to.equal(1);
+			expect(Mock.inst().namespace.calls[0]).to.deep.equal({ namespace: 'test-namespace' });
+			expect(Mock.inst().namespace.calls.length).to.equal(1);
+			expect(Mock.inst().query.calls[0]).to.deep.equal({ query: { test: 'query' } });
+			expect(Mock.inst().query.calls.length).to.equal(1);
 		});
 
-		it('will demonstrate that state.data is per-method, not shared', async () => {
+		it('will demonstrate that data is per-method, not shared', async () => {
 			const Counter = mocky.create(mocky.class({
 				constructor: mocky.function((context) => {
-					// state.data here is separate from other methods
-					context.state.data.constructorData = 'set in constructor';
+					context.data.constructorData = 'set in constructor';
 				}).args('startValue'),
 				getConstructorData: mocky.function((context) => {
-					// This state.data is different from constructor's state.data
-					return context.state.data.constructorData; // Will be undefined
+					return context.data.constructorData; // Will be undefined
 				})
 			}));
 
 			const counter = new Counter(10);
-			// This will be undefined because each method has its own state.data
+			// This will be undefined because each method has its own data
 			expect(counter.getConstructorData()).to.equal(undefined);
 		});
 
@@ -440,21 +482,21 @@ describe('lil-mocky', () => {
 			expect(counter1.getCount()).to.equal(12);
 		});
 
-		it('will track number of instances created with numInsts', async () => {
+		it('will track number of instances created with insts.length', async () => {
 			const Mock = mocky.create(mocky.class({
 				constructor: mocky.function().args('value')
 			}));
 
-			expect(Mock.numInsts()).to.equal(0);
+			expect(Mock.insts.length).to.equal(0);
 
 			const inst1 = new Mock('first');
-			expect(Mock.numInsts()).to.equal(1);
+			expect(Mock.insts.length).to.equal(1);
 
 			const inst2 = new Mock('second');
-			expect(Mock.numInsts()).to.equal(2);
+			expect(Mock.insts.length).to.equal(2);
 
 			const inst3 = new Mock('third');
-			expect(Mock.numInsts()).to.equal(3);
+			expect(Mock.insts.length).to.equal(3);
 		});
 
 		it('will reset all instances and counters', async () => {
@@ -471,21 +513,21 @@ describe('lil-mocky', () => {
 
 			expect(inst1.run('test')).to.equal('first-ret');
 			expect(inst2.run('test')).to.equal('second-ret');
-			expect(Mock.numInsts()).to.equal(2);
-			expect(Mock.inst(0).run.calls().length).to.equal(1);
+			expect(Mock.insts.length).to.equal(2);
+			expect(Mock.inst(0).run.calls.length).to.equal(1);
 
 			// Reset should clear everything
 			Mock.reset();
 
-			expect(Mock.numInsts()).to.equal(0);
+			expect(Mock.insts.length).to.equal(0);
 
 			// After reset, new instances start from index 0 again
 			const inst3 = new Mock('third');
-			expect(Mock.numInsts()).to.equal(1);
+			expect(Mock.insts.length).to.equal(1);
 			// Returns should be cleared
 			expect(inst3.run('test')).to.equal(undefined);
 			// Calls should be cleared
-			expect(Mock.inst(0).run.calls().length).to.equal(1); // Just this one call
+			expect(Mock.inst(0).run.calls.length).to.equal(1); // Just this one call
 		});
 
 		it('will reset plain value properties to initial values', async () => {
@@ -503,14 +545,14 @@ describe('lil-mocky', () => {
 			inst2.name = 'second';
 			inst2.count = 20;
 
-			expect(Mock.numInsts()).to.equal(2);
+			expect(Mock.insts.length).to.equal(2);
 			expect(Mock.inst(0).name).to.equal('first');
 			expect(Mock.inst(1).count).to.equal(20);
 
 			// Reset
 			Mock.reset();
 
-			expect(Mock.numInsts()).to.equal(0);
+			expect(Mock.insts.length).to.equal(0);
 
 			// After reset, descriptions are fresh with initial values
 			expect(Mock.inst(0).name).to.equal(null);
@@ -552,7 +594,7 @@ describe('lil-mocky', () => {
 			const result = await inst.fetchData('test-id');
 
 			expect(result).to.equal('async-result');
-			expect(Mock.inst().fetchData.calls(0)).to.deep.equal({ id: 'test-id' });
+			expect(Mock.inst().fetchData.calls[0]).to.deep.equal({ id: 'test-id' });
 		});
 
 		it('will throw errors from class methods', async () => {
@@ -560,28 +602,12 @@ describe('lil-mocky', () => {
 				throwError: mocky.function().args('message')
 			}));
 
-			const testError = new Error('Test error');
-			Mock.inst().throwError.ret(testError);
+			Mock.inst().throwError.throw(new Error('Test error'));
 
 			const inst = new Mock();
 
 			expect(() => inst.throwError('fail')).to.throw('Test error');
-			expect(Mock.inst().throwError.calls(0)).to.deep.equal({ message: 'fail' });
-		});
-
-		it('will handle onRet handlers in class methods', async () => {
-			const Mock = mocky.create(mocky.class({
-				calculate: mocky.function().args('x', 'y')
-			}));
-
-			Mock.inst().calculate.onRet((args) => {
-				return args.x + args.y;
-			});
-
-			const inst = new Mock();
-
-			expect(inst.calculate(5, 3)).to.equal(8);
-			expect(inst.calculate(10, 20)).to.equal(30);
+			expect(Mock.inst().throwError.calls[0]).to.deep.equal({ message: 'fail' });
 		});
 
 		it('will handle different return values per call', async () => {
@@ -590,14 +616,14 @@ describe('lil-mocky', () => {
 			}));
 
 			Mock.inst().getValue.ret('default');
-			Mock.inst().getValue.ret('first-call', 1);
-			Mock.inst().getValue.ret('second-call', 2);
+			Mock.inst().getValue.ret('first-call', 0);
+			Mock.inst().getValue.ret('second-call', 1);
 
 			const inst = new Mock();
 
 			expect(inst.getValue()).to.equal('first-call');
 			expect(inst.getValue()).to.equal('second-call');
-			expect(inst.getValue()).to.equal('default'); // Falls back to call 0
+			expect(inst.getValue()).to.equal('default'); // Falls back to default
 		});
 
 		it('will support class inheritance with super calls', () => {
@@ -630,7 +656,7 @@ describe('lil-mocky', () => {
 			// Mock constructor should have run
 			expect(child.mockInitialized).to.equal(true);
 			expect(child.mockValue).to.equal(10);
-			expect(Mock.inst().constructor.calls(0)).to.deep.equal({ value: 10 });
+			expect(Mock.inst().constructor.calls[0]).to.deep.equal({ value: 10 });
 
 			// Child constructor should have run after
 			expect(child.childInitialized).to.equal(true);
@@ -639,7 +665,7 @@ describe('lil-mocky', () => {
 			// Child's overridden method calls super and wraps result
 			const result = child.getValue('test');
 			expect(result).to.equal('child-mock-value');
-			expect(Mock.inst().getValue.calls(0)).to.deep.equal({ x: 'test' });
+			expect(Mock.inst().getValue.calls[0]).to.deep.equal({ x: 'test' });
 		});
 
 		it('will not expose __mockyInst in deep equal comparisons', () => {
@@ -721,7 +747,7 @@ describe('lil-mocky', () => {
 			expect(inst.name).to.equal('World');
 			expect(Mock.inst(0).name).to.equal('World');
 			expect(inst.greet('Hi')).to.equal('Hello!');
-			expect(Mock.inst().greet.calls(0)).to.deep.equal({ greeting: 'Hi' });
+			expect(Mock.inst().greet.calls[0]).to.deep.equal({ greeting: 'Hi' });
 		});
 
 		it('will support nested objects with methods', () => {
@@ -739,7 +765,7 @@ describe('lil-mocky', () => {
 
 			expect(inst.db.query('SELECT *')).to.deep.equal({ rows: ['a', 'b'] });
 			expect(inst.db.close()).to.equal(true);
-			expect(Mock.inst(0).db.query.calls(0)).to.deep.equal({ sql: 'SELECT *' });
+			expect(Mock.inst(0).db.query.calls[0]).to.deep.equal({ sql: 'SELECT *' });
 		});
 
 		it('will access mock helpers directly on instance methods', () => {
@@ -754,12 +780,12 @@ describe('lil-mocky', () => {
 			expect(inst.run('hello')).to.equal('test-ret');
 
 			// Access calls via instance
-			expect(inst.run.calls(0)).to.deep.equal({ arg: 'hello' });
-			expect(inst.run.calls().length).to.equal(1);
+			expect(inst.run.calls[0]).to.deep.equal({ arg: 'hello' });
+			expect(inst.run.calls.length).to.equal(1);
 
 			// Reset via instance
 			inst.run.reset();
-			expect(inst.run.calls().length).to.equal(0);
+			expect(inst.run.calls.length).to.equal(0);
 		});
 	});
 
@@ -771,7 +797,7 @@ describe('lil-mocky', () => {
 			}).build();
 
 			Mock.staticMethod('test');
-			expect(Mock.staticMethod.calls(0)).to.deep.equal({ x: 'test' });
+			expect(Mock.staticMethod.calls[0]).to.deep.equal({ x: 'test' });
 		});
 		it('will not expose static methods on instances', () => {
 			const Mock = mocky.cls({
@@ -790,10 +816,10 @@ describe('lil-mocky', () => {
 
 			Mock.staticMethod.ret('value');
 			Mock.staticMethod('test');
-			expect(Mock.staticMethod.calls().length).to.equal(1);
+			expect(Mock.staticMethod.calls.length).to.equal(1);
 
 			Mock.reset();
-			expect(Mock.staticMethod.calls().length).to.equal(0);
+			expect(Mock.staticMethod.calls.length).to.equal(0);
 			expect(Mock.staticMethod('test')).to.equal(undefined);
 		});
 		it('will support ret and throw on static methods', () => {
@@ -876,7 +902,7 @@ describe('lil-mocky', () => {
 
 			expect(mock()).to.equal(1);
 			expect(mock()).to.equal(2);
-			expect(mock.data('count')).to.equal(2);
+			expect(mock.data.count).to.equal(2);
 		});
 		it('will clear ctx.data on reset', () => {
 			const mock = mocky.fn((ctx) => {
@@ -884,12 +910,12 @@ describe('lil-mocky', () => {
 			}).build();
 
 			mock();
-			expect(mock.data('value')).to.equal('set');
+			expect(mock.data.value).to.equal('set');
 
 			mock.reset();
 			mock();
-			expect(mock.data('value')).to.equal('set');
-			expect(mock.data()).to.deep.equal({ value: 'set' });
+			expect(mock.data.value).to.equal('set');
+			expect(mock.data).to.deep.equal({ value: 'set' });
 		});
 	});
 
@@ -899,7 +925,7 @@ describe('lil-mocky', () => {
 			expect(mock()).to.equal('pre-configured');
 		});
 		it('will set per-call return value on builder', () => {
-			const mock = mocky.fn().ret('default').ret('first', 1).build();
+			const mock = mocky.fn().ret('default').ret('first', 0).build();
 			expect(mock()).to.equal('first');
 			expect(mock()).to.equal('default');
 		});
@@ -914,6 +940,13 @@ describe('lil-mocky', () => {
 			mock.reset();
 			expect(mock()).to.equal('builder-value');
 		});
+		it('will restore builder per-call ret values on reset', () => {
+			const mock = mocky.fn().ret('default').ret('first', 0).build();
+			mock.ret('override');
+			mock.reset();
+			expect(mock()).to.equal('first');
+			expect(mock()).to.equal('default');
+		});
 	});
 
 	describe('throw', () => {
@@ -922,7 +955,7 @@ describe('lil-mocky', () => {
 			mock.throw(new Error('thrown'));
 
 			expect(() => mock()).to.throw('thrown');
-			expect(mock.calls().length).to.equal(1);
+			expect(mock.calls.length).to.equal(1);
 		});
 		it('will throw a non-Error value via mock.throw()', () => {
 			const mock = mocky.function().build();
@@ -933,7 +966,7 @@ describe('lil-mocky', () => {
 		it('will throw on specific call index', () => {
 			const mock = mocky.function().build();
 			mock.ret('default');
-			mock.throw(new Error('first call'), 1);
+			mock.throw(new Error('first call'), 0);
 
 			expect(() => mock()).to.throw('first call');
 			expect(mock()).to.equal('default');
@@ -955,7 +988,7 @@ describe('lil-mocky', () => {
 			mock.ret('result');
 
 			expect(mock(1)).to.equal('result');
-			expect(mock.calls(0)).to.deep.equal({ x: 1 });
+			expect(mock.calls[0]).to.deep.equal({ x: 1 });
 		});
 		it('will use mocky.obj() as synonym for mocky.object()', () => {
 			const mock = mocky.obj({
@@ -964,7 +997,7 @@ describe('lil-mocky', () => {
 
 			mock.run.ret('test');
 			expect(mock.run('hello')).to.equal('test');
-			expect(mock.run.calls(0)).to.deep.equal({ arg: 'hello' });
+			expect(mock.run.calls[0]).to.deep.equal({ arg: 'hello' });
 		});
 		it('will use mocky.cls() as synonym for mocky.class()', () => {
 			const Mock = mocky.cls({
@@ -983,14 +1016,23 @@ describe('lil-mocky', () => {
 			Mock.instance().method.ret('value');
 			const inst = new Mock();
 			expect(inst.method('test')).to.equal('value');
-			expect(Mock.instance(0).method.calls(0)).to.deep.equal({ x: 'test' });
+			expect(Mock.instance(0).method.calls[0]).to.deep.equal({ x: 'test' });
 		});
-		it('will use .pick() as synonym for .argSelect()', () => {
+		it('will use Mock.instances as synonym for Mock.insts', () => {
+			const Mock = mocky.class({
+				method: mocky.function()
+			}).build();
+
+			const inst = new Mock();
+			expect(Mock.instances.length).to.equal(1);
+			expect(Mock.instances).to.equal(Mock.insts);
+		});
+		it('will use .pick() to select specific arguments', () => {
 			const mock = mocky.function().pick(1).build();
 			mock.ret('result');
 
 			mock('first', { test: 'data' }, 'third');
-			expect(mock.calls(0)).to.deep.equal({ test: 'data' });
+			expect(mock.calls[0]).to.deep.equal({ test: 'data' });
 		});
 	});
 
@@ -1014,13 +1056,13 @@ describe('lil-mocky', () => {
 			expect(obj.greet('Test')).to.equal('Hello, Test!');
 
 			// Tracks multiple calls
-			expect(greetSpy.calls().length).to.equal(2);
-			expect(greetSpy.calls(0)).to.deep.equal(['World']);
-			expect(greetSpy.calls(1)).to.deep.equal(['Test']);
+			expect(greetSpy.calls.length).to.equal(2);
+			expect(greetSpy.calls[0]).to.deep.equal(['World']);
+			expect(greetSpy.calls[1]).to.deep.equal(['Test']);
 
 			// Preserves this context
 			expect(obj.getValue()).to.equal(42);
-			expect(valueSpy.calls().length).to.equal(1);
+			expect(valueSpy.calls.length).to.equal(1);
 
 			greetSpy.restore();
 			valueSpy.restore();
@@ -1039,7 +1081,7 @@ describe('lil-mocky', () => {
 			const result = obj.getValue();
 
 			expect(result).to.equal('overridden');
-			expect(spy.calls().length).to.equal(1);
+			expect(spy.calls.length).to.equal(1);
 		});
 
 		it('will restore original method', () => {
@@ -1072,8 +1114,8 @@ describe('lil-mocky', () => {
 			const result = instance.greet('Test');
 
 			expect(result).to.equal('Hello, Test');
-			expect(spy.calls().length).to.equal(1);
-			expect(spy.calls(0)).to.deep.equal(['Test']);
+			expect(spy.calls.length).to.equal(1);
+			expect(spy.calls[0]).to.deep.equal(['Test']);
 
 			spy.restore();
 		});
@@ -1092,7 +1134,7 @@ describe('lil-mocky', () => {
 			const result = obj.add(3, 4);
 
 			expect(result).to.equal(70);
-			expect(spy.calls(0)).to.deep.equal({ x: 3, y: 4 });
+			expect(spy.calls[0]).to.deep.equal({ x: 3, y: 4 });
 
 			spy.restore();
 		});
@@ -1106,7 +1148,59 @@ describe('lil-mocky', () => {
 			});
 
 			expect(obj.getValue()).to.equal(43);
-			expect(spy.calls().length).to.equal(1);
+			expect(spy.calls.length).to.equal(1);
+
+			spy.restore();
+		});
+		it('will reset spy calls and return values', () => {
+			const obj = {
+				getValue: function() { return 'original'; }
+			};
+
+			const spy = mocky.spy(obj, 'getValue');
+			spy.ret('mocked');
+			obj.getValue();
+
+			expect(spy.calls.length).to.equal(1);
+
+			spy.reset();
+
+			expect(spy.calls.length).to.equal(0);
+			expect(obj.getValue()).to.equal('original'); // calls through again
+
+			spy.restore();
+		});
+		it('will throw from spy via spy.throw()', () => {
+			const obj = {
+				getValue: function() { return 'original'; }
+			};
+
+			const spy = mocky.spy(obj, 'getValue');
+			spy.throw(new Error('spy error'));
+
+			expect(() => obj.getValue()).to.throw('spy error');
+			expect(spy.calls.length).to.equal(1);
+
+			spy.restore();
+		});
+		it('will return falsy ret values from spy without calling through', () => {
+			const obj = {
+				getValue: function() { return 'original'; }
+			};
+
+			const spy = mocky.spy(obj, 'getValue');
+
+			spy.ret(0);
+			expect(obj.getValue()).to.equal(0);
+
+			spy.ret(false);
+			expect(obj.getValue()).to.equal(false);
+
+			spy.ret('');
+			expect(obj.getValue()).to.equal('');
+
+			spy.ret(null);
+			expect(obj.getValue()).to.equal(null);
 
 			spy.restore();
 		});
@@ -1126,7 +1220,7 @@ describe('lil-mocky', () => {
 			const result = obj.add(3, 4);
 
 			expect(result).to.equal(70); // (3 + 4) * 10
-			expect(spy.calls(0)).to.deep.equal({ x: 3, y: 4 });
+			expect(spy.calls[0]).to.deep.equal({ x: 3, y: 4 });
 
 			spy.restore();
 		});

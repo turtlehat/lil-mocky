@@ -11,7 +11,8 @@ function functionBuilder(body) {
 		args: [],
 		select: [],
 		original: undefined,
-		rets: []
+		defaultRet: { has: false, value: undefined },
+		rets: new Map()
 	};
 
 	return {
@@ -22,10 +23,6 @@ function functionBuilder(body) {
 		},
 		args: function(...args) {
 			options.args = args;
-			return this;
-		},
-		argSelect: function(...indexes) {
-			options.select = indexes;
 			return this;
 		},
 		pick: function(...indexes) {
@@ -40,8 +37,12 @@ function functionBuilder(body) {
 			this.__mockyStatic = true;
 			return this;
 		},
-		ret: function(value, call = 0) {
-			options.rets[call] = value;
+		ret: function(value, ...rest) {
+			if (rest.length === 0) {
+				options.defaultRet = { has: true, value };
+			} else {
+				options.rets.set(rest[0], value);
+			}
 			return this;
 		},
 		build: function(parent, key) {
@@ -57,26 +58,28 @@ function functionBuilder(body) {
 }
 
 function wireFunction(mock, state, options = {}) {
-	mock.ret = (value, call = 0) => {
-		state.rets[call] = value;
+	mock.ret = (value, ...rest) => {
+		if (rest.length === 0) {
+			state.defaultRet = { has: true, value };
+		} else {
+			state.rets.set(rest[0], value);
+		}
 	};
-	mock.throw = (error, call = 0) => {
-		state.rets[call] = { [THROW_MARKER]: true, error };
+	mock.throw = (error, ...rest) => {
+		const wrapped = { [THROW_MARKER]: true, error };
+		if (rest.length === 0) {
+			state.defaultRet = { has: true, value: wrapped };
+		} else {
+			state.rets.set(rest[0], wrapped);
+		}
 	};
-	mock.onRet = (handler, call = 0) => {
-		state.retHandlers[call] = handler;
-	};
-	mock.calls = (call) => {
-		return call !== undefined ? state.calls[call] : state.calls;
-	};
-	mock.data = (key) => {
-		return key !== undefined ? state.data[key] : state.data;
-	};
+	Object.defineProperty(mock, 'calls', { get: () => state.calls, configurable: true });
 	mock.reset = () => {
-		state.rets = options.rets ? [...options.rets] : [];
-		state.retHandlers = [];
+		state.defaultRet = { ...options.defaultRet };
+		state.rets = new Map(options.rets);
 		state.calls = [];
 		state.data = {};
+		mock.data = state.data;
 	};
 	mock.reset();
 
@@ -98,30 +101,22 @@ function createFunction(state, options) {
 function getFunctionBody(parent, state, options, rawArgs) {
 	const args = deepClone(getFunctionArgs(rawArgs, options));
 	state.calls.push(args);
-	const call = state.calls.length;
+	const call = state.calls.length - 1;
 
 	let ret;
 
-	if (state.rets[call]) {
-		ret = state.rets[call];
-	} else if (state.retHandlers[call]) {
-		ret = state.retHandlers[call](args);
-	} else if (state.rets[0]) {
-		ret = state.rets[0];
-	} else if (state.retHandlers[0]) {
-		ret = state.retHandlers[0](args);
+	if (state.rets.has(call)) {
+		ret = state.rets.get(call);
+	} else if (state.defaultRet.has) {
+		ret = state.defaultRet.value;
 	}
 
 	if (ret?.[THROW_MARKER])
 		throw ret.error;
 
-	if (ret instanceof Error)
-		throw ret;
-
 	if (options.body) {
 		return options.body({
 			self: state.parent || parent,
-			state: state,
 			data: state.data,
 			call: call,
 			args: args,
@@ -158,7 +153,6 @@ function getFunctionArgs(callArgs, options) {
 			args[argName] = callArgs[i] !== undefined ? callArgs[i] : defaultValue;
 		}
 	} else {
-		// NOTE: Previously returned null. Now returns array (may break backwards compatibility).
 		args = Array.from(callArgs);
 	}
 
@@ -296,9 +290,8 @@ function wireClass(Mock, state, options) {
 
 		return state.descriptions[index];
 	};
-	Mock.numInsts = () => {
-		return state.numInstances;
-	};
+	Object.defineProperty(Mock, 'insts', { get: () => state.descriptions, configurable: true });
+	Object.defineProperty(Mock, 'instances', { get: () => state.descriptions, configurable: true });
 	Mock.reset = () => {
 		state.descriptions = [];
 		state.numInstances = 0;
@@ -313,10 +306,6 @@ function wireClass(Mock, state, options) {
 	return Mock;
 }
 
-function propertyBuilder() {
-	return undefined;
-}
-
 function deepClone(target) {
 	if (typeof target === 'object') {
 		if (Array.isArray(target)) {
@@ -324,7 +313,7 @@ function deepClone(target) {
 		} else if (target?.constructor === Object) {
 			const clone = {};
 
-			for (const key in target) {
+			for (const key of Reflect.ownKeys(target)) {
 				clone[key] = deepClone(target[key]);
 			}
 
@@ -370,5 +359,4 @@ module.exports = {
 	obj: objectBuilder,
 	class: classBuilder,
 	cls: classBuilder,
-	property: propertyBuilder,
 };

@@ -1,6 +1,6 @@
 # lil-mocky
 
-A lightweight JavaScript mocking library for testing. Create mock functions, objects, classes, and properties with call tracking and return value control. Includes spy functionality for tracking calls to existing methods.
+A lightweight JavaScript mocking library for testing. Create mock functions, objects, and classes with call tracking and return value control. Includes spy functionality for tracking calls to existing methods.
 
 ## 🎯 Features
 
@@ -32,10 +32,10 @@ describe('User Service', () => {
     callback({ name: 'Alice', age: 30 });
 
     // Verify it was called correctly
-    expect(callback.calls(0)).to.deep.equal({
+    expect(callback.calls[0]).to.deep.equal({
       user: { name: 'Alice', age: 30 }
     });
-    expect(callback.calls().length).to.equal(1);
+    expect(callback.calls.length).to.equal(1);
   });
 });
 ```
@@ -69,10 +69,10 @@ const onComplete = mocky.fn().args('result').build();
 processUsers([{ name: 'Alice' }], onComplete);
 
 // Verify the callback was called correctly
-expect(onComplete.calls(0)).to.deep.equal({
+expect(onComplete.calls[0]).to.deep.equal({
   result: [{ name: 'Alice', processed: true }]
 });
-expect(onComplete.calls().length).to.equal(1);
+expect(onComplete.calls.length).to.equal(1);
 ```
 
 **Common patterns:**
@@ -97,7 +97,7 @@ expect(result.data).to.deep.equal([1, 2, 3]);
 // Arguments with defaults
 const logger = mocky.fn().args('message', { level: 'info' }).build();
 logger('Test message');
-expect(logger.calls(0)).to.deep.equal({
+expect(logger.calls[0]).to.deep.equal({
   message: 'Test message',
   level: 'info'
 });
@@ -114,16 +114,18 @@ const mock = mocky.fn().build();
 mock.ret('hello');
 mock(); // Returns 'hello'
 
-// Any value type
+// Any value type — including falsy values
 mock.ret(null);
-mock.ret(42);
+mock.ret(0);
+mock.ret(false);
+mock.ret('');
 mock.ret([1, 2, 3]);
 mock.ret({ data: 'value' });
 
-// Different return per call (call numbers are 1-indexed)
-mock.ret('first', 1);   // First call
-mock.ret('second', 2);  // Second call
-mock.ret('default');    // All other calls (call 0 is the default)
+// Different return per call (0-indexed)
+mock.ret('first', 0);   // First call
+mock.ret('second', 1);  // Second call
+mock.ret('default');     // All other calls (no index = default)
 
 mock(); // 'first'
 mock(); // 'second'
@@ -138,7 +140,7 @@ const mock = mocky.fn().ret('pre-configured').build();
 mock(); // Returns 'pre-configured'
 
 // Per-call values work too
-const mock = mocky.fn().ret('default').ret('first', 1).build();
+const mock = mocky.fn().ret('default').ret('first', 0).build();
 
 // Builder values are restored on reset
 mock.ret('override');
@@ -171,19 +173,17 @@ mock(); // Throws 'Something went wrong'
 // Non-Error values work too
 mock.throw('string error');
 
-// Per-call throwing
-mock.throw(new Error('first call only'), 1);
+// Per-call throwing (0-indexed)
+mock.throw(new Error('first call only'), 0);
 mock.ret('default');
 
 mock(); // Throws 'first call only'
 mock(); // Returns 'default'
 ```
 
-Note: `mock.ret(new Error(...))` also throws (legacy behavior). Use `.throw()` for clarity.
+#### .calls - Verify Arguments
 
-#### .calls() - Verify Arguments
-
-Check what arguments were passed to the mock:
+Check what arguments were passed to the mock. `calls` is a getter that returns the array of all calls:
 
 ```javascript
 const mock = mocky.fn().args('name', 'age').build();
@@ -192,17 +192,35 @@ mock('Alice', 30);
 mock('Bob', 25);
 
 // Get specific call
-mock.calls(0); // { name: 'Alice', age: 30 }
-mock.calls(1); // { name: 'Bob', age: 25 }
+mock.calls[0]; // { name: 'Alice', age: 30 }
+mock.calls[1]; // { name: 'Bob', age: 25 }
 
 // Get all calls
-mock.calls(); // [{ name: 'Alice', age: 30 }, { name: 'Bob', age: 25 }]
-mock.calls().length; // 2
+mock.calls; // [{ name: 'Alice', age: 30 }, { name: 'Bob', age: 25 }]
+mock.calls.length; // 2
 
 // Without .args() config, returns raw arguments array
 const rawMock = mocky.fn().build();
 rawMock('a', 'b', 'c');
-rawMock.calls(0); // ['a', 'b', 'c']
+rawMock.calls[0]; // ['a', 'b', 'c']
+```
+
+#### .data - Custom State
+
+`data` is a plain object on the mock for storing custom state. It persists across calls and is cleared on reset:
+
+```javascript
+const mock = mocky.fn((ctx) => {
+  ctx.data.count = (ctx.data.count || 0) + 1;
+  return ctx.data.count;
+}).build();
+
+mock(); // 1
+mock(); // 2
+mock.data.count; // 2
+
+mock.reset();
+mock.data; // {} (cleared)
 ```
 
 #### .reset() - Clear State
@@ -214,12 +232,12 @@ const mock = mocky.fn().build();
 mock.ret('value');
 mock('test');
 
-mock.calls().length; // 1
+mock.calls.length; // 1
 
 mock.reset();
 
 // Everything cleared
-mock.calls().length; // 0
+mock.calls.length; // 0
 mock(); // Returns undefined (ret cleared)
 ```
 
@@ -244,10 +262,9 @@ const mock = mocky.fn((ctx) => {
   ctx.args       // Named arguments (from .args() config)
   ctx.rawArgs    // Raw arguments array (before .args() processing)
   ctx.ret        // Value set via .ret()
-  ctx.call       // Call number (1-indexed)
+  ctx.call       // Call index (0-indexed)
   ctx.data       // Custom state object (persists across calls, cleared on reset)
   ctx.original   // Original function (available in spies)
-  ctx.state      // Internal state (prefer ctx.data instead)
 
   return someValue;
 }).args('param1', 'param2').build();
@@ -308,10 +325,10 @@ counter(); // 1
 
 ```javascript
 const fetcher = mocky.fn((ctx) => {
-  if (ctx.call === 1)
+  if (ctx.call === 0)
     return { status: 'loading' };
 
-  if (ctx.call === 2)
+  if (ctx.call === 1)
     return { status: 'success', data: [1, 2, 3] };
 
   return { status: 'cached' };
@@ -350,36 +367,12 @@ async function createUser(apiClient, userData) {
 const result = await createUser(api, { name: 'Alice' });
 
 // Verify the API was called correctly
-expect(api.post.calls(0)).to.deep.equal({
+expect(api.post.calls[0]).to.deep.equal({
   url: '/users',
   data: { name: 'Alice' }
 });
 expect(result).to.deep.equal({ id: 123 });
 ```
-
-**Immutability after .build():**
-
-Once you call `.build()`, the mock object's structure is immutable. You cannot add or reassign properties:
-
-```javascript
-// ❌ WRONG - can't modify after .build()
-const mock = mocky.obj({
-  method: mocky.fn()
-}).build();
-
-mock.method = newImplementation; // TypeError: Cannot assign to read only property
-mock.newMethod = mocky.fn().build(); // TypeError: Cannot add property
-
-// ✅ RIGHT - define everything when building
-const mock = mocky.obj({
-  method: mocky.fn((ctx) => {
-    // Your custom implementation here
-    return 'result';
-  })
-}).build();
-```
-
-This immutability prevents bugs and ensures `.reset()` works correctly. To change behavior during tests, use `.ret()` or `.reset()` instead of reassigning properties.
 
 **Nested mocks for complex structures:**
 
@@ -429,7 +422,7 @@ api.newProp = 'added';
 api.reset();
 
 // After reset:
-// - api.get.calls() is []
+// - api.get.calls is []
 // - api.get return values cleared
 // - api.baseURL is 'https://api.example.com' (restored)
 // - api.timeout is 5000 (restored)
@@ -483,26 +476,26 @@ await userService.createUser({ name: 'Alice' });
 authService.login('alice');
 
 // Verify each instance was used correctly
-expect(Logger.inst(0).constructor.calls(0)).to.deep.equal({
+expect(Logger.inst(0).constructor.calls[0]).to.deep.equal({
   moduleName: 'UserService'
 });
-expect(Logger.inst(0).info.calls(0)).to.deep.equal({
+expect(Logger.inst(0).info.calls[0]).to.deep.equal({
   message: 'Creating user'
 });
 
-expect(Logger.inst(1).constructor.calls(0)).to.deep.equal({
+expect(Logger.inst(1).constructor.calls[0]).to.deep.equal({
   moduleName: 'AuthService'
 });
-expect(Logger.inst(1).info.calls(0)).to.deep.equal({
+expect(Logger.inst(1).info.calls[0]).to.deep.equal({
   message: 'User logging in'
 });
 
-expect(Logger.numInsts()).to.equal(2);
+expect(Logger.insts.length).to.equal(2);
 ```
 
 **Accessing mock helpers on instances:**
 
-You can access `.calls()`, `.ret()`, and `.reset()` directly on instance methods:
+You can access `.calls`, `.ret()`, and `.reset()` directly on instance methods:
 
 ```javascript
 const Logger = mocky.cls({
@@ -513,7 +506,7 @@ const logger = new Logger();
 logger.info('test message');
 
 // Access calls directly on the instance
-expect(logger.info.calls(0)).to.deep.equal({ message: 'test message' });
+expect(logger.info.calls[0]).to.deep.equal({ message: 'test message' });
 
 // Configure returns on the instance
 logger.info.ret('logged');
@@ -521,7 +514,7 @@ expect(logger.info('another')).to.equal('logged');
 
 // Reset via instance
 logger.info.reset();
-expect(logger.info.calls().length).to.equal(0);
+expect(logger.info.calls.length).to.equal(0);
 ```
 
 **Pre-configuring instances:**
@@ -547,6 +540,29 @@ const db2 = new Database('postgres://replica');
 
 const users = await db1.query('SELECT * FROM users'); // [{ id: 1, ... }]
 const empty = await db2.query('SELECT * FROM users'); // []
+```
+
+#### Instance Access
+
+Access all instances via the `insts` (or `instances`) getter:
+
+```javascript
+const Mock = mocky.cls({
+  method: mocky.fn()
+}).build();
+
+const inst1 = new Mock();
+const inst2 = new Mock();
+
+Mock.insts.length;    // 2
+Mock.instances.length; // 2 (synonym)
+```
+
+Use `Mock.inst(n)` to access or pre-configure a specific instance (lazy-creates if needed):
+
+```javascript
+Mock.inst(0);  // First instance
+Mock.inst(1);  // Second instance
 ```
 
 #### Using ctx.self for Instance State
@@ -622,13 +638,13 @@ Mock.inst(0).method.ret('value');
 const instance1 = new Mock();
 const instance2 = new Mock();
 
-Mock.numInsts(); // 2
+Mock.insts.length; // 2
 
 Mock.reset();
 
 // After reset:
 // - All instance configurations cleared
-// - Mock.numInsts() is 0
+// - Mock.insts.length is 0
 // - Next instantiation starts fresh at instance 0
 ```
 
@@ -659,7 +675,7 @@ function notifyUser(user, message) {
 const result = notifyUser({ email: 'alice@example.com' }, 'Hello!');
 
 // Verify the method was called correctly
-expect(spy.calls(0)).to.deep.equal([
+expect(spy.calls[0]).to.deep.equal([
   'alice@example.com',
   'Notification',
   'Hello!'
@@ -699,7 +715,7 @@ const spy = mocky.spy(obj, 'add', (ctx) => {
 }, ['x', 'y']);
 
 obj.add(3, 4); // 70 — (3 + 4) * 10
-spy.calls(0);  // { x: 3, y: 4 }
+spy.calls[0];  // { x: 3, y: 4 }
 
 spy.restore();
 ```
@@ -731,7 +747,7 @@ client1.request('/api/users', { method: 'GET' });
 client2.request('/api/posts', { method: 'GET' });
 
 // Both instances' calls are tracked
-expect(spy.calls().length).to.equal(2);
+expect(spy.calls.length).to.equal(2);
 spy.restore();
 ```
 
@@ -745,7 +761,7 @@ Migration guide for Jest users:
 |------|-----------|
 | `jest.fn()` | `mocky.fn().build()` |
 | `mock.mockReturnValue(val)` | `mock.ret(val)` |
-| `mock.mock.calls[0][0]` | `mock.calls(0)` |
+| `mock.mock.calls[0][0]` | `mock.calls[0]` |
 | `jest.spyOn(obj, 'method')` | `mocky.spy(obj, 'method')` |
 | `spy.mockRestore()` | `spy.restore()` |
 
